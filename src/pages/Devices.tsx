@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import AuthCheck from "@/components/AuthCheck";
 import Navbar from "@/components/Navbar";
@@ -6,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   DropdownMenu,
   DropdownMenuContent,
@@ -15,56 +13,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MapPin, MoreVertical, Search, Smartphone } from "lucide-react";
+import { MapPin, MoreVertical, RefreshCw, Search, Smartphone } from "lucide-react";
+import { useDevices, useUpdateDeviceLocation } from "@/hooks/use-simplemdm";
+import { format } from "date-fns";
 
-// Mock data
-const mockDevices = [
-  { 
-    id: "dev1", 
-    name: "iPhone 13", 
-    type: "Mobile",
-    owner: "John Doe",
-    status: "Active",
-    lastSeen: "2023-04-29T15:32:10",
-    location: { latitude: 40.7128, longitude: -74.0060 },
-    geofenceId: "geo1",
-    profileId: "profile1" 
-  },
-  { 
-    id: "dev2", 
-    name: "Samsung S21", 
-    type: "Mobile",
-    owner: "Jane Smith",
-    status: "Inactive",
-    lastSeen: "2023-04-28T09:15:22",
-    location: { latitude: 40.7282, longitude: -73.9942 },
-    geofenceId: "geo2",
-    profileId: "profile2" 
-  },
-  { 
-    id: "dev3", 
-    name: "iPad Pro", 
-    type: "Tablet",
-    owner: "Mark Johnson",
-    status: "Active",
-    lastSeen: "2023-04-29T14:05:18",
-    location: { latitude: 40.7352, longitude: -74.0153 },
-    geofenceId: null,
-    profileId: "profile3" 
-  },
-  { 
-    id: "dev4", 
-    name: "MacBook Pro", 
-    type: "Laptop",
-    owner: "Sarah Williams",
-    status: "Active",
-    lastSeen: "2023-04-29T16:22:45",
-    location: { latitude: 40.7128, longitude: -74.0060 },
-    geofenceId: "geo1",
-    profileId: "profile1" 
-  },
-];
-
+// Mock data for profiles and geofences until we implement those
 const mockGeofences = [
   { id: "geo1", name: "Office", latitude: 40.7128, longitude: -74.0060, radius: 100, profileId: "profile1" },
   { id: "geo2", name: "Warehouse", latitude: 40.7282, longitude: -73.9942, radius: 200, profileId: "profile2" },
@@ -79,32 +32,57 @@ const mockProfiles = [
 const Devices = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [deviceTypeFilter, setDeviceTypeFilter] = useState<string>("all");
+  const { data: devicesData, isLoading, isError, refetch } = useDevices({ limit: 50 });
+  const updateDeviceLocation = useUpdateDeviceLocation();
+
+  // Function to handle refreshing a device's location
+  const handleUpdateLocation = (deviceId: number | string) => {
+    updateDeviceLocation.mutate(deviceId);
+  };
   
-  const filteredDevices = mockDevices.filter(device => {
-    const matchesSearch = device.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          device.owner.toLowerCase().includes(searchQuery.toLowerCase());
+  // Filter devices based on search query and device type
+  const filteredDevices = devicesData?.data?.filter(device => {
+    const deviceName = device.attributes.name || '';
+    const modelName = device.attributes.model_name || '';
     
+    const matchesSearch = 
+      deviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      modelName.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Use model_name to filter by device type
+    // This is a basic example, you might want to improve this based on your needs
+    const type = device.attributes.model_name?.toLowerCase() || '';
     const matchesType = deviceTypeFilter === "all" || 
-                        device.type.toLowerCase() === deviceTypeFilter.toLowerCase();
+                       (deviceTypeFilter === "mobile" && (type.includes('iphone') || type.includes('android'))) ||
+                       (deviceTypeFilter === "tablet" && (type.includes('ipad') || type.includes('tablet'))) ||
+                       (deviceTypeFilter === "laptop" && (type.includes('mac') || type.includes('book')));
     
     return matchesSearch && matchesType;
-  });
+  }) || [];
 
-  const getProfileName = (profileId: string | null) => {
-    if (!profileId) return "None";
-    const profile = mockProfiles.find(p => p.id === profileId);
-    return profile ? profile.name : "Unknown";
+  // These are placeholder functions, to be replaced when we implement geofence and profile features
+  const getProfileName = (device: any) => {
+    // For now, just returning a placeholder. Will implement based on your profile structure.
+    return "Standard Profile";
   };
 
-  const getGeofenceName = (geofenceId: string | null) => {
-    if (!geofenceId) return "None";
-    const geofence = mockGeofences.find(g => g.id === geofenceId);
-    return geofence ? geofence.name : "Unknown";
+  const getGeofenceName = (device: any) => {
+    // For now, returning None. Will implement when geofence feature is added.
+    return "None";
   };
 
-  const formatLastSeen = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
+  const getDeviceStatus = (device: any) => {
+    return device.attributes.status === "enrolled" ? "Active" : device.attributes.status;
+  };
+
+  const formatLastSeen = (dateString: string | null) => {
+    if (!dateString) return "Never";
+    try {
+      const date = new Date(dateString);
+      return format(date, "MMM d, yyyy h:mm a");
+    } catch (error) {
+      return "Invalid date";
+    }
   };
 
   return (
@@ -113,7 +91,13 @@ const Devices = () => {
         <Navbar />
         
         <main className="flex-1 container mx-auto p-4 md:p-6">
-          <h1 className="text-2xl font-bold mb-6">Devices</h1>
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Devices</h1>
+            <Button onClick={() => refetch()} variant="outline" size="sm">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh Devices
+            </Button>
+          </div>
           
           <div className="grid grid-cols-1 gap-6">
             <Card>
@@ -122,7 +106,12 @@ const Devices = () => {
                   <div>
                     <CardTitle>Device Management</CardTitle>
                     <CardDescription>
-                      {filteredDevices.length} device{filteredDevices.length !== 1 ? 's' : ''}
+                      {isLoading 
+                        ? "Loading devices..." 
+                        : isError 
+                          ? "Error loading devices" 
+                          : `${filteredDevices.length} device${filteredDevices.length !== 1 ? 's' : ''}`
+                      }
                     </CardDescription>
                   </div>
                   
@@ -159,44 +148,71 @@ const Devices = () => {
                       <thead>
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Device</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Owner</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Serial</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Seen</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Geofence</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Location</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Profile</th>
                           <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="bg-card divide-y divide-border">
-                        {filteredDevices.length > 0 ? (
+                        {isLoading ? (
+                          <tr>
+                            <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                              Loading devices...
+                            </td>
+                          </tr>
+                        ) : isError ? (
+                          <tr>
+                            <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                              Error loading devices. Please refresh and try again.
+                            </td>
+                          </tr>
+                        ) : filteredDevices.length > 0 ? (
                           filteredDevices.map((device) => (
                             <tr key={device.id}>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <Smartphone className="h-5 w-5 text-muted-foreground mr-2" />
-                                  <span className="font-medium">{device.name}</span>
+                                  <span className="font-medium">{device.attributes.name}</span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{device.type}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{device.owner}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">{device.attributes.model_name}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">{device.attributes.serial_number || "Unknown"}</td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                  device.status === 'Active' 
+                                  device.attributes.status === 'enrolled' 
                                     ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' 
                                     : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
                                 }`}>
-                                  {device.status}
+                                  {getDeviceStatus(device)}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{formatLastSeen(device.lastSeen)}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">{formatLastSeen(device.attributes.last_seen_at)}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm">
                                 <div className="flex items-center">
-                                  {device.geofenceId && <MapPin className="h-3 w-3 text-primary mr-1" />}
-                                  {getGeofenceName(device.geofenceId)}
+                                  {device.attributes.location_latitude && device.attributes.location_longitude ? (
+                                    <>
+                                      <MapPin className="h-3 w-3 text-primary mr-1" />
+                                      {device.attributes.location_latitude.substring(0, 6)}, {device.attributes.location_longitude.substring(0, 6)}
+                                    </>
+                                  ) : (
+                                    "No location data"
+                                  )}
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="ml-1 h-6 w-6"
+                                    onClick={() => handleUpdateLocation(device.id)}
+                                    disabled={updateDeviceLocation.isPending && updateDeviceLocation.variables === device.id}
+                                  >
+                                    <RefreshCw className={`h-3 w-3 ${updateDeviceLocation.isPending && updateDeviceLocation.variables === device.id ? 'animate-spin' : ''}`} />
+                                  </Button>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{getProfileName(device.profileId)}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">{getProfileName(device)}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-center">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -208,8 +224,9 @@ const Devices = () => {
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem>View Details</DropdownMenuItem>
-                                    <DropdownMenuItem>Edit Device</DropdownMenuItem>
+                                    <DropdownMenuItem>Update Location</DropdownMenuItem>
                                     <DropdownMenuItem>Assign Profile</DropdownMenuItem>
+                                    <DropdownMenuItem>Add to Geofence</DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem className="text-red-600">Remove Device</DropdownMenuItem>
                                   </DropdownMenuContent>

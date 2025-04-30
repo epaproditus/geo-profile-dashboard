@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,6 +10,7 @@ import Geofences from "./pages/Geofences";
 import Devices from "./pages/Devices";
 import Profiles from "./pages/Profiles";
 import NotFound from "./pages/NotFound";
+import SimpleMDMTest from "./pages/SimpleMDMTest";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +27,7 @@ const App = () => (
           <Route path="/geofences" element={<Geofences />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/profiles" element={<Profiles />} />
+          <Route path="/simplemdm-test" element={<SimpleMDMTest />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
