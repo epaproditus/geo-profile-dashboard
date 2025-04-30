@@ -1,17 +1,22 @@
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
-    const isAuthenticated = localStorage.getItem("isAuthenticated");
-    if (isAuthenticated) {
-      navigate("/dashboard");
-    } else {
-      navigate("/login");
-    }
+    // Small timeout to ensure localStorage check works properly
+    setTimeout(() => {
+      const isAuthenticated = localStorage.getItem("isAuthenticated");
+      if (isAuthenticated) {
+        navigate("/dashboard");
+      } else {
+        navigate("/login");
+      }
+      setIsLoading(false);
+    }, 300);
   }, [navigate]);
 
   return (
