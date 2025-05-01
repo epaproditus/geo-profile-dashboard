@@ -132,7 +132,7 @@ interface PolicyCardProps {
   onEditPolicy: (policy: ZonePolicy) => void;
 }
 
-const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofence, onDeleteGeofence, onDeletePolicy }) => {
+const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofence, onDeleteGeofence, onDeletePolicy, onEditPolicy }) => {
   // Find all geofences associated with this policy
   const policyGeofences = geofences.filter(geofence => geofence.zonePolicyId === policy.id);
   
