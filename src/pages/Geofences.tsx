@@ -66,6 +66,17 @@ const defaultPolicies: ZonePolicy[] = [
       wifiRestricted: false
     }
   },
+  { 
+    id: "test-policy", 
+    name: "Test Policy (Can Delete)", 
+    description: "This is a test policy that can be deleted", 
+    isDefault: false,
+    settings: {
+      cameraBlocked: true,
+      screenLockRequired: true,
+      wifiRestricted: false
+    }
+  },
 ];
 
 // Save geofences to localStorage
@@ -236,7 +247,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           <Shield className="h-4 w-4 mr-2" />
           Edit Policy Settings
         </Button>
-        {!policy.isDefault ? (
+        {!policy.isDefault && (
           <Button 
             variant="destructive" 
             size="icon"
@@ -248,7 +259,8 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           >
             <Trash className="h-4 w-4" />
           </Button>
-        ) : (
+        )}
+        {policy.isDefault && (
           <Button 
             variant="ghost" 
             size="icon"
@@ -366,10 +378,10 @@ const Geofences = () => {
   };
 
   const handleDeletePolicy = (id: string) => {
-    // Prevent deleting default policy
     const policyToDelete = policies.find(p => p.id === id);
     if (!policyToDelete) return;
-    
+
+    // Double-check we're not deleting the default policy
     if (policyToDelete.isDefault) {
       toast({
         title: "Cannot Delete Default Policy",
@@ -389,6 +401,9 @@ const Geofences = () => {
       });
       return;
     }
+
+    // Debug log to confirm the function is being called
+    console.log('Attempting to delete policy:', id);
     
     // Confirm deletion
     if (!confirm('Are you sure you want to delete this policy? Any associated geofences will be unlinked.')) {
