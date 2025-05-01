@@ -397,26 +397,38 @@ const Geofences = () => {
     // Validate location for non-default policies
     if (!editingPolicy.isDefault) {
       const { latitude, longitude, displayName, radius } = editingPolicy.location;
+      
       if (!displayName.trim()) {
         toast({
-          title: "Invalid Location Name",
-          description: "Please enter a name for the location",
+          title: "Location Name Required",
+          description: "Please enter a name for this location",
           variant: "destructive"
         });
         return;
       }
-      if (isNaN(latitude) || isNaN(longitude)) {
+      
+      if (isNaN(latitude) || latitude < -90 || latitude > 90) {
         toast({
-          title: "Invalid Coordinates",
-          description: "Please enter valid latitude and longitude values",
+          title: "Invalid Latitude",
+          description: "Latitude must be between -90 and 90 degrees",
           variant: "destructive"
         });
         return;
       }
-      if (isNaN(radius) || radius <= 0) {
+      
+      if (isNaN(longitude) || longitude < -180 || longitude > 180) {
+        toast({
+          title: "Invalid Longitude",
+          description: "Longitude must be between -180 and 180 degrees",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      if (isNaN(radius) || radius < 1) {
         toast({
           title: "Invalid Radius",
-          description: "Please enter a positive radius value in meters",
+          description: "Radius must be at least 1 meter",
           variant: "destructive"
         });
         return;
@@ -904,6 +916,7 @@ const Geofences = () => {
                       <Input
                         id="latitude"
                         type="number"
+                        step="0.000001"
                         value={editingPolicy.location.latitude}
                         onChange={(e) => setEditingPolicy({
                           ...editingPolicy,
@@ -919,6 +932,7 @@ const Geofences = () => {
                       <Input
                         id="longitude"
                         type="number"
+                        step="0.000001"
                         value={editingPolicy.location.longitude}
                         onChange={(e) => setEditingPolicy({
                           ...editingPolicy,
@@ -937,19 +951,20 @@ const Geofences = () => {
                   <Input
                     id="radius"
                     type="number"
+                    min="1"
                     value={editingPolicy.location.radius}
                     onChange={(e) => setEditingPolicy({
                       ...editingPolicy,
                       location: {
                         ...editingPolicy.location,
-                        radius: parseFloat(e.target.value) || 0
+                        radius: parseFloat(e.target.value) || 1
                       }
                     })}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Or search by address:</Label>
+                  <Label>Search by address:</Label>
                   <GeofenceAddressSearch 
                     onSelectLocation={(lat, lng, displayName) => {
                       setEditingPolicy({
@@ -963,6 +978,22 @@ const Geofences = () => {
                       });
                     }}
                   />
+                </div>
+
+                <div className="p-3 border rounded-md bg-secondary/10">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Current Location</span>
+                  </div>
+                  <div className="text-sm mt-1">
+                    <p>{editingPolicy.location.displayName}</p>
+                    <p className="text-muted-foreground">
+                      {editingPolicy.location.latitude.toFixed(6)}, {editingPolicy.location.longitude.toFixed(6)}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Radius: {editingPolicy.location.radius}m
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
