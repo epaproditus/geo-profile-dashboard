@@ -118,6 +118,7 @@ interface PolicyCardProps {
   geofences: Geofence[];
   onEditGeofence: (id: string) => void;
   onDeleteGeofence: (id: string) => void;
+  onDeletePolicy: (id: string) => void;
 }
 
 const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofence, onDeleteGeofence }) => {
@@ -263,6 +264,7 @@ const Geofences = () => {
   const [locationDisplayName, setLocationDisplayName] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
+  const [policies, setPolicies] = useState<ZonePolicy[]>(loadPoliciesFromLocalStorage());
   const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
   const [newPolicyName, setNewPolicyName] = useState('');
   
@@ -350,7 +352,8 @@ const Geofences = () => {
   };
 
   const handleDeletePolicy = (id: string) => {
-    const updatedPolicies = defaultPolicies.filter(p => p.id !== id);
+    const updatedPolicies = policies.filter(p => p.id !== id);
+    setPolicies(updatedPolicies);
     savePoliciesToLocalStorage(updatedPolicies);
     
     // Also remove this policy from any geofences
@@ -384,7 +387,8 @@ const Geofences = () => {
       }
     };
     
-    const updatedPolicies = [...defaultPolicies, newPolicy];
+    const updatedPolicies = [...policies, newPolicy];
+    setPolicies(updatedPolicies);
     savePoliciesToLocalStorage(updatedPolicies);
     
     setNewPolicyName('');
@@ -468,7 +472,7 @@ const Geofences = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                   {/* Policy cards with associated locations */}
                   <div className="lg:col-span-3 space-y-6">
-                    {defaultPolicies.map(policy => (
+                    {policies.map(policy => (
                       <PolicyCard 
                         key={policy.id}
                         policy={policy}
