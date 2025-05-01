@@ -39,6 +39,12 @@ interface ZonePolicy {
   name: string;
   description: string;
   isDefault: boolean;
+  address: {
+    displayName: string;
+    latitude: number;
+    longitude: number;
+    radius: number; // in meters
+  };
 }
 
 // LocalStorage helper functions
@@ -54,7 +60,13 @@ const defaultPolicies: ZonePolicy[] = [
     id: "default-policy", 
     name: "Default (Fallback) Policy", 
     description: "Applied when devices are outside all defined locations", 
-    isDefault: true
+    isDefault: true,
+    address: {
+      displayName: "Global Fallback",
+      latitude: 0,
+      longitude: 0,
+      radius: 0 // Special case for default policy
+    }
   }
 ];
 
