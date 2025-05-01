@@ -22,6 +22,7 @@ import { MapPin, Plus, Trash, Search, Map as MapIcon, Edit, Shield, Check, Info 
 import GeofenceAddressSearch from "@/components/geofences/GeofenceAddressSearch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import PolicyLocationSearch from '@/components/geofences/PolicyLocationSearch';
 
 // Type for geofence objects
 interface Geofence {
@@ -39,13 +40,13 @@ interface ZonePolicy {
   name: string;
   description: string;
   isDefault: boolean;
-  location: {
+  locations: {
     displayName: string;
     latitude: number;
     longitude: number;
     radius: number; // in meters
     geofenceId: string; // Reference to the geofence
-  };
+  }[];
 }
 
 // LocalStorage helper functions
@@ -62,13 +63,15 @@ const defaultPolicies: ZonePolicy[] = [
     name: "Default (Fallback) Policy", 
     description: "Applied when devices are outside all defined locations", 
     isDefault: true,
-    location: {
-      displayName: "Global Fallback",
-      latitude: 0,
-      longitude: 0,
-      radius: 0, // Special case for default policy
-      geofenceId: "default-geofence"
-    }
+    locations: [
+      {
+        displayName: "Global Default Location",
+        latitude: 37.7749, // San Francisco coordinates as a reasonable default
+        longitude: -122.4194,
+        radius: 1000, // 1km radius - a reasonable starting point
+        geofenceId: "default-geofence"
+      }
+    ]
   }
 ];
 
@@ -111,16 +114,66 @@ const loadPoliciesFromLocalStorage = (): ZonePolicy[] => {
     const savedPolicies = localStorage.getItem(POLICY_STORAGE_KEY);
     if (savedPolicies) {
       const parsed = JSON.parse(savedPolicies);
+      
+      // Migrate old policy format (with 'location') to new format (with 'locations' array)
+      const migratedPolicies = parsed.map((policy: any) => {
+        // Check if this policy uses the old format (has 'location')
+        if (policy.location) {
+          // Create a new clean object with just the properties we want
+          const cleanedPolicy = {
+            id: policy.id,
+            name: policy.name,
+            description: policy.description,
+            isDefault: policy.isDefault,
+            // Convert single location to locations array
+            locations: [policy.location]
+          };
+          return cleanedPolicy;
+        }
+        return policy;
+      });
+      
       // Check if we have all required policies
       const hasAllPolicies = defaultPolicies.every(defaultPolicy => 
-        parsed.some((p: ZonePolicy) => p.id === defaultPolicy.id)
+        migratedPolicies.some((p: ZonePolicy) => p.id === defaultPolicy.id)
       );
-      return hasAllPolicies ? parsed : defaultPolicies;
+      
+      // Persist the migrated policies to localStorage
+      if (JSON.stringify(parsed) !== JSON.stringify(migratedPolicies)) {
+        console.log('Migrated policies from old format to new format:', migratedPolicies);
+        localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(migratedPolicies));
+      }
+      
+      return hasAllPolicies ? migratedPolicies : defaultPolicies;
     }
     return defaultPolicies;
   } catch (error) {
     console.error('Error loading policies from localStorage:', error);
     return defaultPolicies;
+  }
+};
+
+// Force save policies to localStorage
+const forceSavePoliciesToLocalStorage = (policies: ZonePolicy[]) => {
+  try {
+    // Clean up any inconsistent data before saving
+    const cleanPolicies = policies.map(policy => {
+      // Ensure locations is an array
+      if (!Array.isArray(policy.locations)) {
+        return {
+          ...policy,
+          locations: policy.location ? [policy.location] : []
+        };
+      }
+      return policy;
+    });
+    
+    console.log('Saving clean policies to localStorage:', cleanPolicies);
+    localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(cleanPolicies));
+    return true;
+  } catch (error) {
+    console.error('Error force-saving policies to localStorage:', error);
+    return false;
   }
 };
 
@@ -151,89 +204,67 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
             )}
           </div>
           <Badge variant="secondary">
-            {policyGeofences.length} location{policyGeofences.length !== 1 ? 's' : ''}
+            {policy.locations.length} location{policy.locations.length !== 1 ? 's' : ''}
           </Badge>
         </div>
         <CardDescription>{policy.description}</CardDescription>
       </CardHeader>
       
       <CardContent>
-        <div className="space-y-3">
-          <div className="border rounded p-3 bg-secondary/10">
-            {policy.isDefault ? (
-              <div className="flex items-center gap-2">
-                <Info className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  This policy applies when a device is outside all defined locations.
-                </p>
+        <div className="space-y-4">
+          {/* Display all locations for the policy with maps on the right side */}
+          {policy.locations.map((location, index) => (
+            <div key={index} className="border rounded-lg overflow-hidden bg-secondary/5">
+              {/* Flex container for side-by-side layout */}
+              <div className="flex flex-col md:flex-row">
+                {/* Location information on the left */}
+                <div className="p-4 flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">
+                      Location {policy.locations.length > 1 ? index + 1 : ''}
+                    </span>
+                    {policy.isDefault && index === 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        Fallback Policy
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <p>{location.displayName}</p>
+                    <p className="text-muted-foreground">
+                      {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Radius: {location.radius}m
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Map on the right */}
+                <div className="md:w-2/3 h-[180px] md:h-auto">
+                  <Map
+                    geofences={[{
+                      id: location.geofenceId,
+                      name: location.displayName,
+                      latitude: location.latitude,
+                      longitude: location.longitude,
+                      radius: location.radius,
+                      profileId: null,
+                      zonePolicyId: null
+                    }]}
+                    center={[location.longitude, location.latitude]}
+                    zoom={13}
+                  />
+                </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Location</span>
-                </div>
-                <div className="text-sm">
-                  <p>{policy.location.displayName}</p>
-                  <p className="text-muted-foreground">
-                    {policy.location.latitude.toFixed(6)}, {policy.location.longitude.toFixed(6)}
-                  </p>
-                  <p className="text-muted-foreground">
-                    Radius: {policy.location.radius}m
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {!policy.isDefault && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Applied in locations:</span>
-              </div>
-              {policyGeofences.length > 0 ? (
-                <div className="space-y-2">
-                  {policyGeofences.map(geofence => (
-                    <div 
-                      key={geofence.id}
-                      className="flex justify-between items-center p-2 bg-secondary/20 rounded-lg"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{geofence.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {geofence.radius}m radius
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-primary/10"
-                          onClick={() => onEditGeofence(geofence.id)}
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => onDeleteGeofence(geofence.id)}
-                        >
-                          <Trash className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="border rounded p-3 bg-secondary/10">
-                  <p className="text-sm text-muted-foreground">
-                    This policy is not applied to any locations.
-                  </p>
-                </div>
-              )}
             </div>
+          ))}
+          
+          {policy.isDefault && (
+            <p className="text-xs text-muted-foreground italic">
+              This policy will apply when a device is outside all other defined locations.
+            </p>
           )}
         </div>
       </CardContent>
@@ -305,6 +336,13 @@ const Geofences = () => {
   const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
   const [isEditPolicyDialogOpen, setIsEditPolicyDialogOpen] = useState(false);
   const [newPolicyName, setNewPolicyName] = useState('');
+  const [newPolicyDescription, setNewPolicyDescription] = useState('');
+  const [newPolicyLocation, setNewPolicyLocation] = useState<{
+    displayName: string;
+    latitude: number;
+    longitude: number;
+    radius: number;
+  } | null>(null);
   const [editingPolicy, setEditingPolicy] = useState<ZonePolicy | null>(null);
   const [selectedGeofenceForPolicy, setSelectedGeofenceForPolicy] = useState<string | null>(null);
   
@@ -396,7 +434,7 @@ const Geofences = () => {
     
     // Validate location for non-default policies
     if (!editingPolicy.isDefault) {
-      const { latitude, longitude, displayName, radius } = editingPolicy.location;
+      const { latitude, longitude, displayName, radius } = editingPolicy.locations[0];
       
       if (!displayName.trim()) {
         toast({
@@ -498,44 +536,52 @@ const Geofences = () => {
     setIsEditPolicyDialogOpen(true);
   };
 
+  // Update the handleCreatePolicy function to handle multiple locations
   const handleCreatePolicy = () => {
-    if (!newPolicyName.trim() || !selectedGeofenceForPolicy) {
+    if (!newPolicyName.trim()) {
       toast({
         title: "Missing Information",
-        description: "Please provide a policy name and select a location",
+        description: "Please provide a policy name",
         variant: "destructive"
       });
       return;
     }
-
-    const selectedGeofence = geofences.find(g => g.id === selectedGeofenceForPolicy);
-    if (!selectedGeofence) return;
-
-    const newPolicy: ZonePolicy = {
-      id: `policy-${Date.now()}`,
-      name: newPolicyName,
-      description: "",
-      isDefault: false,
-      location: {
-        displayName: selectedGeofence.name,
-        latitude: selectedGeofence.latitude,
-        longitude: selectedGeofence.longitude,
-        radius: selectedGeofence.radius,
-        geofenceId: selectedGeofence.id
-      }
-    };
-    
-    const updatedPolicies = [...policies, newPolicy];
-    setPolicies(updatedPolicies);
-    savePoliciesToLocalStorage(updatedPolicies);
-    
-    setNewPolicyName('');
-    setIsNewPolicyDialogOpen(false);
-    
-    toast({
-      title: "Policy Created",
-      description: `"${newPolicyName}" has been created successfully.`,
-    });
+  
+    // When using the new direct location selection
+    if (newPolicyLocation) {
+      const newPolicy: ZonePolicy = {
+        id: `policy-${Date.now()}`,
+        name: newPolicyName,
+        description: newPolicyDescription || "",
+        isDefault: false,
+        locations: [
+          {
+            ...newPolicyLocation,
+            geofenceId: `geo-${Date.now()}` // Generate a unique ID for the location
+          }
+        ]
+      };
+      
+      const updatedPolicies = [...policies, newPolicy];
+      setPolicies(updatedPolicies);
+      savePoliciesToLocalStorage(updatedPolicies);
+      
+      setNewPolicyName('');
+      setNewPolicyDescription('');
+      setNewPolicyLocation(null);
+      setIsNewPolicyDialogOpen(false);
+      
+      toast({
+        title: "Policy Created",
+        description: `"${newPolicyName}" has been created successfully.`,
+      });
+    } else {
+      toast({
+        title: "Missing Information",
+        description: "Please select a location for this policy",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleDeleteGeofence = (id: string) => {
@@ -600,23 +646,6 @@ const Geofences = () => {
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-2">
             <h1 className="text-2xl font-bold">Location Policies</h1>
             <div className="flex gap-2">
-              <Button 
-                variant="outline"
-                onClick={() => {
-                  if (confirm('This will remove all custom policies. Continue?')) {
-                    // Keep only the default policy
-                    const defaultOnly = policies.filter(p => p.isDefault);
-                    setPolicies(defaultOnly);
-                    savePoliciesToLocalStorage(defaultOnly);
-                    toast({
-                      title: "Policies Reset",
-                      description: "All custom policies have been removed.",
-                    });
-                  }
-                }}
-              >
-                Clear All Policies
-              </Button>
               <Button onClick={() => setIsNewPolicyDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 New Policy
@@ -626,40 +655,22 @@ const Geofences = () => {
           
           {/* Policies view */}
           <div className="mt-4">
-                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Policy cards with associated locations */}
-                  <div className="lg:col-span-3 space-y-6">
-                    {console.log('Rendering policies:', policies)}
-                    {policies.map(policy => (
-                      <PolicyCard 
-                        key={policy.id}
-                        policy={policy}
-                        geofences={geofences}
-                        onEditGeofence={handleEditGeofence}
-                        onDeleteGeofence={handleDeleteGeofence}
-                        onDeletePolicy={handleDeletePolicy}
-                        onEditPolicy={handleEditPolicy}
-                      />
-                    ))}
-                  </div>
-                  
-                  {/* Map area (kept in policies view for context) */}
-                  <div className="lg:col-span-2">
-                    <Card>
-                      <CardContent className="p-0">
-                        <Map 
-                          geofences={geofences}
-                          selectedGeofence={selectedGeofence}
-                          onSelectGeofence={setSelectedGeofence}
-                          isAddingGeofence={isAddingGeofence}
-                          onAddGeofence={handleAddGeofence}
-                          center={newGeofenceCoords 
-                            ? [newGeofenceCoords.lng, newGeofenceCoords.lat] 
-                            : undefined}
-                        />
-                      </CardContent>
-                    </Card>
-                  </div>
+                  {policies.map(policy => (
+                    <PolicyCard 
+                      key={policy.id}
+                      policy={policy}
+                      geofences={geofences.map(g => ({
+                        ...g,
+                        profileId: null // Add required profileId property
+                      }))}
+                      onEditGeofence={handleEditGeofence}
+                      onDeleteGeofence={handleDeleteGeofence}
+                      onDeletePolicy={handleDeletePolicy}
+                      onEditPolicy={handleEditPolicy}
+                    />
+                  ))}
                 </div>
           </div>
           
@@ -794,11 +805,11 @@ const Geofences = () => {
 
       {/* New Policy Dialog */}
       <Dialog open={isNewPolicyDialogOpen} onOpenChange={setIsNewPolicyDialogOpen}>
-        <DialogContent className="sm:max-w-[550px]">
+        <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Create New Policy</DialogTitle>
             <DialogDescription>
-              Define a new location policy by selecting an available geofence.
+              Define a new location policy with a custom location
             </DialogDescription>
           </DialogHeader>
           
@@ -814,34 +825,22 @@ const Geofences = () => {
             </div>
 
             <div className="space-y-2">
-              <Label>Select Location</Label>
-              <div className="border rounded-md p-4">
-                {geofences.filter(g => !policies.some(p => p.location.geofenceId === g.id)).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No available locations. Please create a geofence first.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {geofences.filter(g => !policies.some(p => p.location.geofenceId === g.id)).map(geofence => (
-                      <div 
-                        key={geofence.id}
-                        className="flex items-center justify-between p-2 border rounded hover:bg-secondary/50 cursor-pointer"
-                        onClick={() => setSelectedGeofenceForPolicy(geofence.id)}
-                      >
-                        <div>
-                          <p className="font-medium">{geofence.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {geofence.radius}m radius at {geofence.latitude.toFixed(4)}, {geofence.longitude.toFixed(4)}
-                          </p>
-                        </div>
-                        {selectedGeofenceForPolicy === geofence.id && (
-                          <Check className="h-4 w-4 text-primary" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Label htmlFor="policy-description">Description</Label>
+              <Input 
+                id="policy-description" 
+                placeholder="e.g., Policy for the main office building"
+                value={newPolicyDescription}
+                onChange={(e) => setNewPolicyDescription(e.target.value)}
+              />
+            </div>
+
+            <Separator className="my-4" />
+            
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <PolicyLocationSearch
+                onLocationSelect={(location) => setNewPolicyLocation(location)}
+              />
             </div>
           </div>
           
@@ -851,7 +850,7 @@ const Geofences = () => {
             </Button>
             <Button 
               onClick={handleCreatePolicy}
-              disabled={!newPolicyName.trim()}
+              disabled={!newPolicyName.trim() || !newPolicyLocation}
             >
               Create Policy
             </Button>
@@ -861,7 +860,7 @@ const Geofences = () => {
 
       {/* Edit Policy Dialog */}
       <Dialog open={isEditPolicyDialogOpen} onOpenChange={setIsEditPolicyDialogOpen}>
-        <DialogContent className="sm:max-w-[550px]">
+        <DialogContent className="sm:max-w-[650px]">
           <DialogHeader>
             <DialogTitle>Edit Policy</DialogTitle>
             <DialogDescription>
@@ -892,109 +891,98 @@ const Geofences = () => {
               />
             </div>
             
-            {editingPolicy && !editingPolicy.isDefault && (
+            {editingPolicy && (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Location Name</Label>
-                  <Input
-                    value={editingPolicy.location.displayName}
-                    onChange={(e) => setEditingPolicy({
-                      ...editingPolicy,
-                      location: {
-                        ...editingPolicy.location,
-                        displayName: e.target.value
-                      }
-                    })}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Coordinates</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label htmlFor="latitude" className="text-xs">Latitude</Label>
-                      <Input
-                        id="latitude"
-                        type="number"
-                        step="0.000001"
-                        value={editingPolicy.location.latitude}
-                        onChange={(e) => setEditingPolicy({
-                          ...editingPolicy,
-                          location: {
-                            ...editingPolicy.location,
-                            latitude: parseFloat(e.target.value) || 0
-                          }
-                        })}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="longitude" className="text-xs">Longitude</Label>
-                      <Input
-                        id="longitude"
-                        type="number"
-                        step="0.000001"
-                        value={editingPolicy.location.longitude}
-                        onChange={(e) => setEditingPolicy({
-                          ...editingPolicy,
-                          location: {
-                            ...editingPolicy.location,
-                            longitude: parseFloat(e.target.value) || 0
-                          }
-                        })}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="radius">Radius (meters)</Label>
-                  <Input
-                    id="radius"
-                    type="number"
-                    min="1"
-                    value={editingPolicy.location.radius}
-                    onChange={(e) => setEditingPolicy({
-                      ...editingPolicy,
-                      location: {
-                        ...editingPolicy.location,
-                        radius: parseFloat(e.target.value) || 1
-                      }
-                    })}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Search by address:</Label>
-                  <GeofenceAddressSearch 
-                    onSelectLocation={(lat, lng, displayName) => {
-                      setEditingPolicy({
-                        ...editingPolicy,
-                        location: {
-                          ...editingPolicy.location,
-                          latitude: lat,
-                          longitude: lng,
-                          displayName: displayName
-                        }
+                <Separator className="my-4" />
+                <div className="flex justify-between items-center">
+                  <Label>Location Settings</Label>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setEditingPolicy(prev => {
+                        if (!prev) return null;
+                        return {
+                          ...prev,
+                          locations: [
+                            ...prev.locations,
+                            {
+                              displayName: "New Location",
+                              latitude: 37.7749,
+                              longitude: -122.4194,
+                              radius: 100,
+                              geofenceId: `geo-${Date.now()}`
+                            }
+                          ]
+                        };
                       });
                     }}
-                  />
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Location
+                  </Button>
                 </div>
-
-                <div className="p-3 border rounded-md bg-secondary/10">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Current Location</span>
-                  </div>
-                  <div className="text-sm mt-1">
-                    <p>{editingPolicy.location.displayName}</p>
-                    <p className="text-muted-foreground">
-                      {editingPolicy.location.latitude.toFixed(6)}, {editingPolicy.location.longitude.toFixed(6)}
-                    </p>
-                    <p className="text-muted-foreground">
-                      Radius: {editingPolicy.location.radius}m
+                
+                {editingPolicy.isDefault && (
+                  <div className="mb-3 p-3 bg-muted rounded-md">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Info className="h-4 w-4 text-primary" />
+                      <p className="text-sm font-medium">Default Policy Location</p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      This policy serves as a fallback when devices are outside all other defined locations.
                     </p>
                   </div>
-                </div>
+                )}
+                
+                {/* Display tabs for multiple locations */}
+                {editingPolicy.locations.length > 0 && (
+                  <Tabs defaultValue="0" className="w-full">
+                    <TabsList className="grid" style={{ gridTemplateColumns: `repeat(${Math.min(editingPolicy.locations.length, 4)}, 1fr)` }}>
+                      {editingPolicy.locations.map((_, index) => (
+                        <TabsTrigger key={index} value={index.toString()}>
+                          Location {index + 1}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                    
+                    {editingPolicy.locations.map((location, index) => (
+                      <TabsContent key={index} value={index.toString()} className="relative">
+                        <PolicyLocationSearch
+                          initialLocation={location}
+                          onLocationSelect={(updatedLocation) => 
+                            setEditingPolicy(prev => {
+                              if (!prev) return null;
+                              const newLocations = [...prev.locations];
+                              newLocations[index] = updatedLocation;
+                              return {...prev, locations: newLocations};
+                            })
+                          }
+                        />
+                        
+                        {/* Delete location button - only show if there's more than one location */}
+                        {editingPolicy.locations.length > 1 && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="absolute top-0 right-0"
+                            onClick={() => {
+                              setEditingPolicy(prev => {
+                                if (!prev) return null;
+                                const newLocations = [...prev.locations];
+                                newLocations.splice(index, 1);
+                                return {...prev, locations: newLocations};
+                              });
+                            }}
+                          >
+                            <Trash className="h-4 w-4 mr-2" />
+                            Remove Location
+                          </Button>
+                        )}
+                      </TabsContent>
+                    ))}
+                  </Tabs>
+                )}
               </div>
             )}
           </div>
