@@ -121,7 +121,7 @@ interface PolicyCardProps {
   onDeletePolicy: (id: string) => void;
 }
 
-const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofence, onDeleteGeofence }) => {
+const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofence, onDeleteGeofence, onDeletePolicy }) => {
   // Find all geofences associated with this policy
   const policyGeofences = geofences.filter(geofence => geofence.zonePolicyId === policy.id);
   
@@ -240,7 +240,10 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           <Button 
             variant="destructive" 
             size="icon"
-            onClick={() => onDeletePolicy(policy.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeletePolicy(policy.id);
+            }}
           >
             <Trash className="h-4 w-4" />
           </Button>
@@ -352,11 +355,21 @@ const Geofences = () => {
   };
 
   const handleDeletePolicy = (id: string) => {
+    // Prevent deleting default policy
+    const policyToDelete = policies.find(p => p.id === id);
+    if (policyToDelete?.isDefault) return;
+    
+    // Confirm deletion
+    if (!confirm('Are you sure you want to delete this policy? Any associated geofences will be unlinked.')) {
+      return;
+    }
+
+    // Update policies state
     const updatedPolicies = policies.filter(p => p.id !== id);
     setPolicies(updatedPolicies);
     savePoliciesToLocalStorage(updatedPolicies);
     
-    // Also remove this policy from any geofences
+    // Update any geofences using this policy
     const updatedGeofences = geofences.map(g => {
       if (g.zonePolicyId === id) {
         return { ...g, zonePolicyId: null };
