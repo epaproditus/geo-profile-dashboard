@@ -39,11 +39,12 @@ interface ZonePolicy {
   name: string;
   description: string;
   isDefault: boolean;
-  address: {
+  location: {
     displayName: string;
     latitude: number;
     longitude: number;
     radius: number; // in meters
+    geofenceId: string; // Reference to the geofence
   };
 }
 
@@ -61,11 +62,12 @@ const defaultPolicies: ZonePolicy[] = [
     name: "Default (Fallback) Policy", 
     description: "Applied when devices are outside all defined locations", 
     isDefault: true,
-    address: {
+    location: {
       displayName: "Global Fallback",
       latitude: 0,
       longitude: 0,
-      radius: 0 // Special case for default policy
+      radius: 0, // Special case for default policy
+      geofenceId: "default-geofence"
     }
   }
 ];
@@ -158,15 +160,32 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
       <CardContent>
         <div className="space-y-3">
           
-          {policy.isDefault ? (
-            <div className="border rounded p-3 bg-secondary/10">
+          <div className="border rounded p-3 bg-secondary/10">
+            {policy.isDefault ? (
               <div className="flex items-center gap-2">
                 <Info className="h-4 w-4 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
                   This policy applies when a device is outside all defined locations.
                 </p>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Location</span>
+                </div>
+                <div className="text-sm">
+                  <p>{policy.location.displayName}</p>
+                  <p className="text-muted-foreground">
+                    {policy.location.latitude.toFixed(6)}, {policy.location.longitude.toFixed(6)}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Radius: {policy.location.radius}m
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
           ) : policyGeofences.length > 0 ? (
             <div className="space-y-2 mt-2">
               <div className="flex items-center gap-2">
@@ -285,6 +304,7 @@ const Geofences = () => {
   const [isEditPolicyDialogOpen, setIsEditPolicyDialogOpen] = useState(false);
   const [newPolicyName, setNewPolicyName] = useState('');
   const [editingPolicy, setEditingPolicy] = useState<ZonePolicy | null>(null);
+  const [selectedGeofenceForPolicy, setSelectedGeofenceForPolicy] = useState<string | null>(null);
   
   const { toast } = useToast();
 
@@ -436,13 +456,30 @@ const Geofences = () => {
   };
 
   const handleCreatePolicy = () => {
-    if (!newPolicyName.trim()) return;
-    
+    if (!newPolicyName.trim() || !selectedGeofenceForPolicy) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide a policy name and select a location",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const selectedGeofence = geofences.find(g => g.id === selectedGeofenceForPolicy);
+    if (!selectedGeofence) return;
+
     const newPolicy: ZonePolicy = {
       id: `policy-${Date.now()}`,
       name: newPolicyName,
       description: "",
-      isDefault: false
+      isDefault: false,
+      location: {
+        displayName: selectedGeofence.name,
+        latitude: selectedGeofence.latitude,
+        longitude: selectedGeofence.longitude,
+        radius: selectedGeofence.radius,
+        geofenceId: selectedGeofence.id
+      }
     };
     
     const updatedPolicies = [...policies, newPolicy];
@@ -714,11 +751,11 @@ const Geofences = () => {
 
       {/* New Policy Dialog */}
       <Dialog open={isNewPolicyDialogOpen} onOpenChange={setIsNewPolicyDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle>Create New Policy</DialogTitle>
             <DialogDescription>
-              Define a new location policy with custom security settings.
+              Define a new location policy by selecting an available geofence.
             </DialogDescription>
           </DialogHeader>
           
@@ -731,6 +768,37 @@ const Geofences = () => {
                 value={newPolicyName}
                 onChange={(e) => setNewPolicyName(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Select Location</Label>
+              <div className="border rounded-md p-4">
+                {geofences.filter(g => !policies.some(p => p.location.geofenceId === g.id)).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No available locations. Please create a geofence first.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {geofences.filter(g => !policies.some(p => p.location.geofenceId === g.id)).map(geofence => (
+                      <div 
+                        key={geofence.id}
+                        className="flex items-center justify-between p-2 border rounded hover:bg-secondary/50 cursor-pointer"
+                        onClick={() => setSelectedGeofenceForPolicy(geofence.id)}
+                      >
+                        <div>
+                          <p className="font-medium">{geofence.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {geofence.radius}m radius at {geofence.latitude.toFixed(4)}, {geofence.longitude.toFixed(4)}
+                          </p>
+                        </div>
+                        {selectedGeofenceForPolicy === geofence.id && (
+                          <Check className="h-4 w-4 text-primary" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           
