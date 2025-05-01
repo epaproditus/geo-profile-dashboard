@@ -398,9 +398,7 @@ const Geofences = () => {
         <main className="flex-1 container mx-auto p-4 md:p-6">
           {/* Page title and action buttons - always visible */}
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold">
-              {activeView === "policies" ? "Location Policies" : "Geofence Locations"}
-            </h1>
+            <h1 className="text-2xl font-bold">Location Policies</h1>
             
             {activeView === "locations" && (
               <div className="flex gap-2 mt-2 md:mt-0">
