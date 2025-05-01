@@ -57,8 +57,8 @@ const defaultGeofences: Geofence[] = [];
 const defaultPolicies: ZonePolicy[] = [
   { 
     id: "default-policy", 
-    name: "Default Policy", 
-    description: "Default policy when no others are present", 
+    name: "Default (Fallback) Policy", 
+    description: "Applied when devices are outside all defined locations", 
     isDefault: true,
     settings: {
       cameraBlocked: false,
@@ -236,7 +236,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           <Shield className="h-4 w-4 mr-2" />
           Edit Policy Settings
         </Button>
-        {!policy.isDefault && (
+        {!policy.isDefault ? (
           <Button 
             variant="destructive" 
             size="icon"
@@ -245,6 +245,16 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
               e.preventDefault();
               onDeletePolicy(policy.id);
             }}
+          >
+            <Trash className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button 
+            variant="ghost" 
+            size="icon"
+            disabled
+            className="opacity-50 cursor-not-allowed"
+            title="Default policy cannot be deleted"
           >
             <Trash className="h-4 w-4" />
           </Button>
@@ -356,19 +366,21 @@ const Geofences = () => {
   };
 
   const handleDeletePolicy = (id: string) => {
-    // Prevent deleting default policy or last non-default policy
+    // Prevent deleting default policy
     const policyToDelete = policies.find(p => p.id === id);
-    const nonDefaultPolicies = policies.filter(p => !p.isDefault);
+    if (!policyToDelete) return;
     
-    if (policyToDelete?.isDefault) {
+    if (policyToDelete.isDefault) {
       toast({
         title: "Cannot Delete Default Policy",
-        description: "The default policy cannot be deleted.",
+        description: "The default policy cannot be deleted as it serves as a fallback.",
         variant: "destructive"
       });
       return;
     }
-    
+
+    // Check if this is the last non-default policy
+    const nonDefaultPolicies = policies.filter(p => !p.isDefault);
     if (nonDefaultPolicies.length <= 1) {
       toast({
         title: "Cannot Delete Last Policy",
