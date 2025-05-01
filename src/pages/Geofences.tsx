@@ -128,10 +128,12 @@ const loadPoliciesFromLocalStorage = (): ZonePolicy[] => {
   try {
     const savedPolicies = localStorage.getItem(POLICY_STORAGE_KEY);
     if (savedPolicies) {
-      // Merge with defaults to ensure we always have the default policy
       const parsed = JSON.parse(savedPolicies);
-      const hasDefault = parsed.some((p: ZonePolicy) => p.isDefault);
-      return hasDefault ? parsed : [...parsed, defaultPolicies[0]];
+      // Check if we have all required policies
+      const hasAllPolicies = defaultPolicies.every(defaultPolicy => 
+        parsed.some((p: ZonePolicy) => p.id === defaultPolicy.id)
+      );
+      return hasAllPolicies ? parsed : defaultPolicies;
     }
     return defaultPolicies;
   } catch (error) {
@@ -310,6 +312,14 @@ const Geofences = () => {
   const [policies, setPolicies] = useState<ZonePolicy[]>(() => {
     const loadedPolicies = loadPoliciesFromLocalStorage();
     console.log('Loaded policies:', loadedPolicies);
+    
+    // Ensure we always have at least the default policies
+    const hasDefault = loadedPolicies.some(p => p.isDefault);
+    const hasTestPolicies = loadedPolicies.some(p => p.id === "test-policy-1" || p.id === "test-policy-2");
+    
+    if (!hasDefault || !hasTestPolicies) {
+      return defaultPolicies;
+    }
     return loadedPolicies;
   });
   const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
@@ -539,12 +549,23 @@ const Geofences = () => {
         
         <main className="flex-1 container mx-auto p-4 md:p-6">
           {/* Page title and action buttons - always visible */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-2">
             <h1 className="text-2xl font-bold">Location Policies</h1>
-            <Button onClick={() => setIsNewPolicyDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Policy
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  setPolicies(defaultPolicies);
+                  savePoliciesToLocalStorage(defaultPolicies);
+                }}
+              >
+                Reset Policies
+              </Button>
+              <Button onClick={() => setIsNewPolicyDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                New Policy
+              </Button>
+            </div>
           </div>
           
           {/* Policies view */}
@@ -552,6 +573,7 @@ const Geofences = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                   {/* Policy cards with associated locations */}
                   <div className="lg:col-span-3 space-y-6">
+                    {console.log('Rendering policies:', policies)}
                     {policies.map(policy => (
                       <PolicyCard 
                         key={policy.id}
