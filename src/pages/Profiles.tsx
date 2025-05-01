@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import AuthCheck from "@/components/AuthCheck";
@@ -15,12 +14,21 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Plus, ScrollText, Settings, Smartphone, Trash } from "lucide-react";
 
 // Mock data
+const mockGeofences = [
+  { id: 1, name: "Office HQ", address: "123 Main St, San Francisco", radius: 200 },
+  { id: 2, name: "Warehouse", address: "456 Storage Ave, Oakland", radius: 300 },
+  { id: 3, name: "Downtown Store", address: "789 Market St, San Francisco", radius: 150 },
+  { id: 4, name: "Airport", address: "SFO International Terminal", radius: 500 }
+];
+
 const initialProfiles = [
   { 
     id: "profile1", 
     name: "Standard Security", 
     description: "Basic security settings for general use",
     deviceCount: 2,
+    isDefault: false,
+    associatedGeofences: [],
     settings: {
       cameraBlocked: false,
       screenLockRequired: true,
@@ -35,6 +43,11 @@ const initialProfiles = [
     name: "High Security", 
     description: "Enhanced security with strict policies for sensitive data",
     deviceCount: 1,
+    isDefault: false,
+    associatedGeofences: [
+      { id: 2, name: "Warehouse" },
+      { id: 4, name: "Airport" }
+    ],
     settings: {
       cameraBlocked: true,
       screenLockRequired: true,
@@ -49,6 +62,8 @@ const initialProfiles = [
     name: "Development", 
     description: "Relaxed settings for development devices",
     deviceCount: 1,
+    isDefault: true,
+    associatedGeofences: [],
     settings: {
       cameraBlocked: false,
       screenLockRequired: false,

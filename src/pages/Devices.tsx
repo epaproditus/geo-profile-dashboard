@@ -16,6 +16,10 @@ import {
 import { MapPin, MoreVertical, RefreshCw, Search, Smartphone } from "lucide-react";
 import { useDevices, useUpdateDeviceLocation } from "@/hooks/use-simplemdm";
 import { format } from "date-fns";
+import DeviceMap from "@/components/DeviceMap";
+import DeviceDetailModal from "@/components/DeviceDetailModal";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { List, Map as MapIcon } from "lucide-react";
 
 // Mock data for profiles and geofences until we implement those
 const mockGeofences = [
@@ -32,6 +36,9 @@ const mockProfiles = [
 const Devices = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [deviceTypeFilter, setDeviceTypeFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const { data: devicesData, isLoading, isError, refetch } = useDevices({ limit: 50 });
   const updateDeviceLocation = useUpdateDeviceLocation();
 
@@ -93,163 +100,207 @@ const Devices = () => {
         <main className="flex-1 container mx-auto p-4 md:p-6">
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold">Devices</h1>
-            <Button onClick={() => refetch()} variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh Devices
-            </Button>
+            <div className="flex gap-2">
+              <div className="border rounded-md overflow-hidden flex">
+                <Button 
+                  variant={viewMode === "list" ? "default" : "ghost"} 
+                  size="sm" 
+                  className="rounded-none"
+                  onClick={() => setViewMode("list")}
+                >
+                  <List className="h-4 w-4 mr-2" />
+                  List
+                </Button>
+                <Button 
+                  variant={viewMode === "map" ? "default" : "ghost"} 
+                  size="sm" 
+                  className="rounded-none"
+                  onClick={() => setViewMode("map")}
+                >
+                  <MapIcon className="h-4 w-4 mr-2" />
+                  Map
+                </Button>
+              </div>
+              <Button onClick={() => refetch()} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Devices
+              </Button>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 gap-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                  <div>
-                    <CardTitle>Device Management</CardTitle>
-                    <CardDescription>
-                      {isLoading 
-                        ? "Loading devices..." 
-                        : isError 
-                          ? "Error loading devices" 
-                          : `${filteredDevices.length} device${filteredDevices.length !== 1 ? 's' : ''}`
-                      }
-                    </CardDescription>
-                  </div>
-                  
-                  <div className="flex flex-col md:flex-row gap-4">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        type="search"
-                        placeholder="Search devices..."
-                        className="pl-8 w-full md:w-[200px] lg:w-[300px]"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                      />
+            {viewMode === "map" ? (
+              // Map View
+              <DeviceMap height="600px" />
+            ) : (
+              // List View
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                      <CardTitle>Device Management</CardTitle>
+                      <CardDescription>
+                        {isLoading 
+                          ? "Loading devices..." 
+                          : isError 
+                            ? "Error loading devices" 
+                            : `${filteredDevices.length} device${filteredDevices.length !== 1 ? 's' : ''}`
+                        }
+                      </CardDescription>
                     </div>
                     
-                    <Select value={deviceTypeFilter} onValueChange={setDeviceTypeFilter}>
-                      <SelectTrigger className="w-[150px]">
-                        <SelectValue placeholder="Device type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All types</SelectItem>
-                        <SelectItem value="mobile">Mobile</SelectItem>
-                        <SelectItem value="tablet">Tablet</SelectItem>
-                        <SelectItem value="laptop">Laptop</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          type="search"
+                          placeholder="Search devices..."
+                          className="pl-8 w-full md:w-[200px] lg:w-[300px]"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                      </div>
+                      
+                      <Select value={deviceTypeFilter} onValueChange={setDeviceTypeFilter}>
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue placeholder="Device type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All types</SelectItem>
+                          <SelectItem value="mobile">Mobile</SelectItem>
+                          <SelectItem value="tablet">Tablet</SelectItem>
+                          <SelectItem value="laptop">Laptop</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-md border">
-                  <div className="overflow-x-auto">
-                    <table className="w-full divide-y divide-border">
-                      <thead>
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Device</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Serial</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Seen</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Location</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Profile</th>
-                          <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-card divide-y divide-border">
-                        {isLoading ? (
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-md border">
+                    <div className="overflow-x-auto">
+                      <table className="w-full divide-y divide-border">
+                        <thead>
                           <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
-                              Loading devices...
-                            </td>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Device</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Serial</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Seen</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Location</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Profile</th>
+                            <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                           </tr>
-                        ) : isError ? (
-                          <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
-                              Error loading devices. Please refresh and try again.
-                            </td>
-                          </tr>
-                        ) : filteredDevices.length > 0 ? (
-                          filteredDevices.map((device) => (
-                            <tr key={device.id}>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="flex items-center">
-                                  <Smartphone className="h-5 w-5 text-muted-foreground mr-2" />
-                                  <span className="font-medium">{device.attributes.name}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{device.attributes.model_name}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{device.attributes.serial_number || "Unknown"}</td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                  device.attributes.status === 'enrolled' 
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' 
-                                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                                }`}>
-                                  {getDeviceStatus(device)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{formatLastSeen(device.attributes.last_seen_at)}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                <div className="flex items-center">
-                                  {device.attributes.location_latitude && device.attributes.location_longitude ? (
-                                    <>
-                                      <MapPin className="h-3 w-3 text-primary mr-1" />
-                                      {device.attributes.location_latitude.substring(0, 6)}, {device.attributes.location_longitude.substring(0, 6)}
-                                    </>
-                                  ) : (
-                                    "No location data"
-                                  )}
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="ml-1 h-6 w-6"
-                                    onClick={() => handleUpdateLocation(device.id)}
-                                    disabled={updateDeviceLocation.isPending && updateDeviceLocation.variables === device.id}
-                                  >
-                                    <RefreshCw className={`h-3 w-3 ${updateDeviceLocation.isPending && updateDeviceLocation.variables === device.id ? 'animate-spin' : ''}`} />
-                                  </Button>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm">{getProfileName(device)}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-center">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon">
-                                      <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem>View Details</DropdownMenuItem>
-                                    <DropdownMenuItem>Update Location</DropdownMenuItem>
-                                    <DropdownMenuItem>Assign Profile</DropdownMenuItem>
-                                    <DropdownMenuItem>Add to Geofence</DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem className="text-red-600">Remove Device</DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                        </thead>
+                        <tbody className="bg-card divide-y divide-border">
+                          {isLoading ? (
+                            <tr>
+                              <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                                Loading devices...
                               </td>
                             </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
-                              No devices found matching your filters
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                          ) : isError ? (
+                            <tr>
+                              <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                                Error loading devices. Please refresh and try again.
+                              </td>
+                            </tr>
+                          ) : filteredDevices.length > 0 ? (
+                            filteredDevices.map((device) => (
+                              <tr key={device.id}>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <div className="flex items-center">
+                                    <Smartphone className="h-5 w-5 text-muted-foreground mr-2" />
+                                    <span className="font-medium">{device.attributes.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm">{device.attributes.model_name}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm">{device.attributes.serial_number || "Unknown"}</td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    device.attributes.status === 'enrolled' 
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' 
+                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                                  }`}>
+                                    {getDeviceStatus(device)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm">{formatLastSeen(device.attributes.last_seen_at)}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                  <div className="flex items-center">
+                                    {device.attributes.location_latitude && device.attributes.location_longitude ? (
+                                      <>
+                                        <MapPin className="h-3 w-3 text-primary mr-1" />
+                                        {device.attributes.location_latitude.substring(0, 6)}, {device.attributes.location_longitude.substring(0, 6)}
+                                      </>
+                                    ) : (
+                                      "No location data"
+                                    )}
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="ml-1 h-6 w-6"
+                                      onClick={() => handleUpdateLocation(device.id)}
+                                      disabled={updateDeviceLocation.isPending && updateDeviceLocation.variables === device.id}
+                                    >
+                                      <RefreshCw className={`h-3 w-3 ${updateDeviceLocation.isPending && updateDeviceLocation.variables === device.id ? 'animate-spin' : ''}`} />
+                                    </Button>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm">{getProfileName(device)}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-center">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon">
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => {
+                                        setSelectedDeviceId(device.id);
+                                        setIsDetailModalOpen(true);
+                                      }}>
+                                        View Details
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleUpdateLocation(device.id)}>
+                                        Update Location
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => setViewMode("map")}>
+                                        Show on Map
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem>Add to Geofence</DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="text-red-600">Remove Device</DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                                No devices found matching your filters
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </main>
       </div>
+      
+      {/* Device Detail Modal */}
+      <DeviceDetailModal 
+        deviceId={selectedDeviceId} 
+        open={isDetailModalOpen} 
+        onOpenChange={setIsDetailModalOpen} 
+      />
     </AuthCheck>
   );
 };

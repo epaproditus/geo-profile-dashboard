@@ -1,10 +1,9 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import AuthCheck from "@/components/AuthCheck";
 import Navbar from "@/components/Navbar";
 import Map from "@/components/Map";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
   Dialog,
@@ -18,72 +17,377 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MapPin, Plus, Trash } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MapPin, Plus, Trash, Search, Map as MapIcon, Edit, Shield, Check, Info } from "lucide-react";
+import GeofenceAddressSearch from "@/components/geofences/GeofenceAddressSearch";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
-// Mock data
-const mockGeofences = [
-  { id: "geo1", name: "Office", latitude: 40.7128, longitude: -74.0060, radius: 100, profileId: "profile1" },
-  { id: "geo2", name: "Warehouse", latitude: 40.7282, longitude: -73.9942, radius: 200, profileId: "profile2" },
+// Type for geofence objects
+interface Geofence {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radius: number;
+  zonePolicyId: string | null;
+}
+
+// Type for zone policy objects
+interface ZonePolicy {
+  id: string;
+  name: string;
+  description: string;
+  isDefault: boolean;
+  settings: {
+    cameraBlocked: boolean;
+    screenLockRequired: boolean;
+    wifiRestricted: boolean;
+  };
+}
+
+// LocalStorage helper functions
+const STORAGE_KEY = 'geo-profile-dashboard-geofences';
+const POLICY_STORAGE_KEY = 'geo-profile-dashboard-policies';
+
+// Default empty geofences array
+const defaultGeofences: Geofence[] = [];
+
+// Default policies with a basic fallback
+const defaultPolicies: ZonePolicy[] = [
+  { 
+    id: "default-policy", 
+    name: "Default Policy", 
+    description: "Default policy when no others are present", 
+    isDefault: true,
+    settings: {
+      cameraBlocked: false,
+      screenLockRequired: false,
+      wifiRestricted: false
+    }
+  },
 ];
 
-const mockProfiles = [
-  { id: "profile1", name: "Standard Security", description: "Basic security settings" },
-  { id: "profile2", name: "High Security", description: "Enhanced security with strict policies" },
-  { id: "profile3", name: "Development", description: "Relaxed settings for development devices" },
-];
+// Save geofences to localStorage
+const saveGeofencesToLocalStorage = (geofences: Geofence[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(geofences));
+    return true;
+  } catch (error) {
+    console.error('Error saving geofences to localStorage:', error);
+    return false;
+  }
+};
+
+// Load geofences from localStorage
+const loadGeofencesFromLocalStorage = (): Geofence[] => {
+  try {
+    const savedGeofences = localStorage.getItem(STORAGE_KEY);
+    return savedGeofences ? JSON.parse(savedGeofences) : defaultGeofences;
+  } catch (error) {
+    console.error('Error loading geofences from localStorage:', error);
+    return defaultGeofences;
+  }
+};
+
+// Save policies to localStorage
+const savePoliciesToLocalStorage = (policies: ZonePolicy[]) => {
+  try {
+    localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(policies));
+    return true;
+  } catch (error) {
+    console.error('Error saving policies to localStorage:', error);
+    return false;
+  }
+};
+
+// Load policies from localStorage
+const loadPoliciesFromLocalStorage = (): ZonePolicy[] => {
+  try {
+    const savedPolicies = localStorage.getItem(POLICY_STORAGE_KEY);
+    return savedPolicies ? JSON.parse(savedPolicies) : defaultPolicies;
+  } catch (error) {
+    console.error('Error loading policies from localStorage:', error);
+    return defaultPolicies;
+  }
+};
+
+// Policy Card Component
+interface PolicyCardProps {
+  policy: ZonePolicy;
+  geofences: Geofence[];
+  onEditGeofence: (id: string) => void;
+  onDeleteGeofence: (id: string) => void;
+}
+
+const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofence, onDeleteGeofence }) => {
+  // Find all geofences associated with this policy
+  const policyGeofences = geofences.filter(geofence => geofence.zonePolicyId === policy.id);
+  
+  return (
+    <Card className={policy.isDefault ? "border-primary" : undefined}>
+      <CardHeader className="pb-3">
+        <div className="flex justify-between items-start">
+          <div>
+            <CardTitle className="text-lg font-medium">{policy.name}</CardTitle>
+            {policy.isDefault && (
+              <Badge variant="outline" className="mt-1 text-xs border-primary text-primary">
+                Default Policy
+              </Badge>
+            )}
+          </div>
+          <Badge variant="secondary">
+            {policyGeofences.length} location{policyGeofences.length !== 1 ? 's' : ''}
+          </Badge>
+        </div>
+        <CardDescription>{policy.description}</CardDescription>
+      </CardHeader>
+      
+      <CardContent>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Shield className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Security Settings</span>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="flex justify-between items-center p-2 bg-secondary/20 rounded text-sm">
+              <span>Camera Access</span>
+              <Badge variant={policy.settings.cameraBlocked ? "destructive" : "outline"}>
+                {policy.settings.cameraBlocked ? "Blocked" : "Allowed"}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center p-2 bg-secondary/20 rounded text-sm">
+              <span>Screen Lock</span>
+              <Badge variant={policy.settings.screenLockRequired ? "default" : "outline"}>
+                {policy.settings.screenLockRequired ? "Required" : "Optional"}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center p-2 bg-secondary/20 rounded text-sm">
+              <span>Wi-Fi Networks</span>
+              <Badge variant={policy.settings.wifiRestricted ? "destructive" : "outline"}>
+                {policy.settings.wifiRestricted ? "Restricted" : "Allowed"}
+              </Badge>
+            </div>
+          </div>
+          
+          {policy.isDefault ? (
+            <div className="border rounded p-3 bg-secondary/10">
+              <div className="flex items-center gap-2">
+                <Info className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  This policy applies when a device is outside all defined locations.
+                </p>
+              </div>
+            </div>
+          ) : policyGeofences.length > 0 ? (
+            <div className="space-y-2 mt-2">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Applied in locations:</span>
+              </div>
+              <div className="space-y-2">
+                {policyGeofences.map(geofence => (
+                  <div 
+                    key={geofence.id}
+                    className="flex justify-between items-center p-2 bg-secondary/20 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{geofence.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {geofence.radius}m radius
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-primary/10"
+                        onClick={() => onEditGeofence(geofence.id)}
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => onDeleteGeofence(geofence.id)}
+                      >
+                        <Trash className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="border rounded p-3 bg-secondary/10">
+              <p className="text-sm text-muted-foreground">
+                This policy is not applied to any locations.
+              </p>
+            </div>
+          )}
+        </div>
+      </CardContent>
+      
+      <CardFooter>
+        <Button variant="outline" className="w-full">
+          <Shield className="h-4 w-4 mr-2" />
+          Edit Policy Settings
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+};
 
 const Geofences = () => {
-  const [geofences, setGeofences] = useState(mockGeofences);
+  // Initialize state from localStorage
+  const [geofences, setGeofences] = useState<Geofence[]>(loadGeofencesFromLocalStorage);
   const [selectedGeofence, setSelectedGeofence] = useState<string | null>(null);
   const [isAddingGeofence, setIsAddingGeofence] = useState(false);
   const [newGeofenceCoords, setNewGeofenceCoords] = useState<{lat: number, lng: number} | null>(null);
   const [newGeofenceName, setNewGeofenceName] = useState("");
   const [newGeofenceRadius, setNewGeofenceRadius] = useState("100");
-  const [newGeofenceProfile, setNewGeofenceProfile] = useState<string | null>(null);
+  const [newGeofenceZonePolicy, setNewGeofenceZonePolicy] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [geofenceCreationMethod, setGeofenceCreationMethod] = useState<"map" | "address">("map");
+  const [locationDisplayName, setLocationDisplayName] = useState<string | null>(null);
+  const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
+  const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"locations" | "policies">("policies");
   
   const { toast } = useToast();
 
   const handleAddGeofence = (lat: number, lng: number) => {
     setNewGeofenceCoords({ lat, lng });
+    setDialogMode("create");
     setIsDialogOpen(true);
     setIsAddingGeofence(false);
+  };
+
+  const handleAddressSelect = (lat: number, lng: number, displayName: string) => {
+    setNewGeofenceCoords({ lat, lng });
+    setLocationDisplayName(displayName);
+    
+    // Auto-populate the name field with the location name if empty
+    if (!newGeofenceName && dialogMode === "create") {
+      // Extract just the main part of the address (before the first comma)
+      const simplifiedName = displayName.split(',')[0];
+      setNewGeofenceName(simplifiedName);
+    }
   };
 
   const handleSaveGeofence = () => {
     if (!newGeofenceName || !newGeofenceCoords) return;
     
-    const newGeofence = {
-      id: `geo${Date.now()}`,
-      name: newGeofenceName,
-      latitude: newGeofenceCoords.lat,
-      longitude: newGeofenceCoords.lng,
-      radius: parseInt(newGeofenceRadius),
-      profileId: newGeofenceProfile,
-    };
-    
-    setGeofences([...geofences, newGeofence]);
-    toast({
-      title: "Geofence Added",
-      description: `"${newGeofenceName}" has been created successfully.`,
-    });
+    if (dialogMode === "create") {
+      // Create new geofence
+      const newGeofence = {
+        id: `geo${Date.now()}`,
+        name: newGeofenceName,
+        latitude: newGeofenceCoords.lat,
+        longitude: newGeofenceCoords.lng,
+        radius: parseInt(newGeofenceRadius),
+        zonePolicyId: newGeofenceZonePolicy === "none" ? null : newGeofenceZonePolicy,
+      };
+      
+      const updatedGeofences = [...geofences, newGeofence];
+      setGeofences(updatedGeofences);
+      
+      // Save to localStorage
+      const saved = saveGeofencesToLocalStorage(updatedGeofences);
+      
+      toast({
+        title: "Geofence Added",
+        description: `"${newGeofenceName}" has been created successfully${saved ? ' and saved locally' : ''}.`,
+      });
+    } else if (dialogMode === "edit" && editingGeofenceId) {
+      // Update existing geofence
+      const updatedGeofences = geofences.map(geofence => {
+        if (geofence.id === editingGeofenceId) {
+          return {
+            ...geofence,
+            name: newGeofenceName,
+            radius: parseInt(newGeofenceRadius),
+            zonePolicyId: newGeofenceZonePolicy === "none" ? null : newGeofenceZonePolicy,
+            // Keep the original location if we didn't change it
+            latitude: newGeofenceCoords.lat,
+            longitude: newGeofenceCoords.lng,
+          };
+        }
+        return geofence;
+      });
+      
+      setGeofences(updatedGeofences);
+      
+      // Save to localStorage
+      const saved = saveGeofencesToLocalStorage(updatedGeofences);
+      
+      toast({
+        title: "Geofence Updated",
+        description: `"${newGeofenceName}" has been updated successfully${saved ? ' and saved locally' : ''}.`,
+      });
+    }
     
     // Reset form
     setNewGeofenceName("");
     setNewGeofenceRadius("100");
-    setNewGeofenceProfile(null);
+    setNewGeofenceZonePolicy(null);
     setNewGeofenceCoords(null);
+    setLocationDisplayName(null);
+    setEditingGeofenceId(null);
     setIsDialogOpen(false);
   };
 
   const handleDeleteGeofence = (id: string) => {
-    setGeofences(geofences.filter(g => g.id !== id));
+    const updatedGeofences = geofences.filter(g => g.id !== id);
+    setGeofences(updatedGeofences);
+    
+    // Save to localStorage
+    saveGeofencesToLocalStorage(updatedGeofences);
+    
     if (selectedGeofence === id) {
       setSelectedGeofence(null);
     }
+    
     toast({
       title: "Geofence Deleted",
-      description: "The geofence has been removed.",
+      description: "The geofence has been removed and changes are saved locally.",
+    });
+  };
+
+  const handleOpenDialog = () => {
+    setDialogMode("create");
+    setNewGeofenceName("");
+    setNewGeofenceRadius("100");
+    setNewGeofenceZonePolicy(null);
+    setLocationDisplayName(null);
+    setGeofenceCreationMethod("map");
+    setEditingGeofenceId(null);
+    setIsDialogOpen(true);
+  };
+
+  const handleEditGeofence = (id: string) => {
+    const geofenceToEdit = geofences.find(g => g.id === id);
+    if (!geofenceToEdit) return;
+
+    setDialogMode("edit");
+    setEditingGeofenceId(id);
+    setNewGeofenceName(geofenceToEdit.name);
+    setNewGeofenceRadius(geofenceToEdit.radius.toString());
+    setNewGeofenceZonePolicy(geofenceToEdit.zonePolicyId || "none");
+    setNewGeofenceCoords({ lat: geofenceToEdit.latitude, lng: geofenceToEdit.longitude });
+    setGeofenceCreationMethod("map"); // Default to map view when editing
+    setIsDialogOpen(true);
+  };
+
+  // Function to reset to default geofences
+  const resetToDefaultGeofences = () => {
+    setGeofences(defaultGeofences);
+    saveGeofencesToLocalStorage(defaultGeofences);
+    toast({
+      title: "Geofences Reset",
+      description: "All geofences have been reset to default values.",
     });
   };
 
@@ -93,101 +397,288 @@ const Geofences = () => {
         <Navbar />
         
         <main className="flex-1 container mx-auto p-4 md:p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold">Geofences</h1>
-            <Button 
-              onClick={() => setIsAddingGeofence(true)}
-              disabled={isAddingGeofence}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Geofence
-            </Button>
+          {/* Page title and action buttons - always visible */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold">
+              {activeView === "policies" ? "Location Policies" : "Geofence Locations"}
+            </h1>
+            
+            {activeView === "locations" && (
+              <div className="flex gap-2 mt-2 md:mt-0">
+                <Button 
+                  onClick={() => {
+                    setIsAddingGeofence(true);
+                    setGeofenceCreationMethod("map");
+                  }}
+                  disabled={isAddingGeofence}
+                  variant={isAddingGeofence ? "secondary" : "default"}
+                >
+                  <MapPin className="h-4 w-4 mr-2" />
+                  Add Location
+                </Button>
+                <Button 
+                  onClick={handleOpenDialog}
+                  variant="outline"
+                >
+                  <Search className="h-4 w-4 mr-2" />
+                  Search
+                </Button>
+              </div>
+            )}
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <Card>
-                <CardContent className="p-0">
-                  <Map 
-                    geofences={geofences}
-                    selectedGeofence={selectedGeofence}
-                    onSelectGeofence={setSelectedGeofence}
-                    isAddingGeofence={isAddingGeofence}
-                    onAddGeofence={handleAddGeofence}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-            
-            <div>
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle>Geofence List</CardTitle>
-                  <CardDescription>
-                    {geofences.length} geofence{geofences.length !== 1 ? 's' : ''}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {geofences.length > 0 ? (
-                      geofences.map((geofence) => (
-                        <div 
-                          key={geofence.id}
-                          className={`flex justify-between items-center p-3 rounded-lg cursor-pointer ${
-                            selectedGeofence === geofence.id 
-                              ? 'bg-primary/10 border border-primary/30' 
-                              : 'bg-secondary/30 hover:bg-secondary/50'
-                          }`}
-                          onClick={() => setSelectedGeofence(geofence.id)}
-                        >
-                          <div className="flex items-center gap-3">
-                            <MapPin className="h-5 w-5 text-muted-foreground" />
-                            <div className="flex flex-col">
-                              <span className="font-medium">{geofence.name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {geofence.profileId 
-                                  ? `Profile: ${mockProfiles.find(p => p.id === geofence.profileId)?.name || 'Unknown'}` 
-                                  : 'No profile assigned'}
-                              </span>
-                            </div>
-                          </div>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            className="opacity-50 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteGeofence(geofence.id);
-                            }}
-                          >
-                            <Trash className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-6 text-muted-foreground">
-                        <p>No geofences created</p>
-                        <p className="text-sm">Click "Add Geofence" to create one</p>
-                      </div>
-                    )}
+          {/* View selector tabs */}
+          <div className="mb-6">
+            <Tabs value={activeView} onValueChange={(value) => setActiveView(value as "locations" | "policies")} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-0">
+                <TabsTrigger value="policies">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Policies
+                </TabsTrigger>
+                <TabsTrigger value="locations">
+                  <MapPin className="h-4 w-4 mr-2" />
+                  Locations
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="policies" className="mt-4">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                  {/* Map area (kept in policies view for context) */}
+                  <div className="lg:col-span-2">
+                    <Card>
+                      <CardContent className="p-0">
+                        <Map 
+                          geofences={geofences}
+                          selectedGeofence={selectedGeofence}
+                          onSelectGeofence={setSelectedGeofence}
+                          isAddingGeofence={isAddingGeofence}
+                          onAddGeofence={handleAddGeofence}
+                          center={newGeofenceCoords 
+                            ? [newGeofenceCoords.lng, newGeofenceCoords.lat] 
+                            : undefined}
+                        />
+                      </CardContent>
+                    </Card>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                  
+                  {/* Policy cards with associated locations */}
+                  <div className="lg:col-span-3 space-y-6">
+                    {defaultPolicies.map(policy => (
+                      <PolicyCard 
+                        key={policy.id}
+                        policy={policy}
+                        geofences={geofences}
+                        onEditGeofence={handleEditGeofence}
+                        onDeleteGeofence={handleDeleteGeofence}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="locations" className="mt-4">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                  {/* Map area */}
+                  <div className="lg:col-span-2">
+                    <Card>
+                      <CardContent className="p-0">
+                        <Map 
+                          geofences={geofences}
+                          selectedGeofence={selectedGeofence}
+                          onSelectGeofence={setSelectedGeofence}
+                          isAddingGeofence={isAddingGeofence}
+                          onAddGeofence={handleAddGeofence}
+                          center={newGeofenceCoords 
+                            ? [newGeofenceCoords.lng, newGeofenceCoords.lat] 
+                            : undefined}
+                        />
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  {/* Geofence list (original view) */}
+                  <div className="lg:col-span-3">
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle>Geofence List</CardTitle>
+                        <CardDescription>
+                          {geofences.length} geofence{geofences.length !== 1 ? 's' : ''}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {geofences.length > 0 ? (
+                            geofences.map((geofence) => (
+                              <div 
+                                key={geofence.id}
+                                className={`flex justify-between items-center p-3 rounded-lg cursor-pointer ${
+                                  selectedGeofence === geofence.id 
+                                    ? 'bg-primary/10 border border-primary/30' 
+                                    : 'bg-secondary/30 hover:bg-secondary/50'
+                                }`}
+                                onClick={() => setSelectedGeofence(geofence.id)}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <MapPin className="h-5 w-5 text-muted-foreground" />
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{geofence.name}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {geofence.zonePolicyId 
+                                        ? `Policy: ${defaultPolicies.find(p => p.id === geofence.zonePolicyId)?.name || 'Unknown'}` 
+                                        : 'No policy assigned'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    className="opacity-50 hover:opacity-100 hover:bg-primary/10 hover:text-primary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditGeofence(geofence.id);
+                                    }}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    className="opacity-50 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteGeofence(geofence.id);
+                                    }}
+                                  >
+                                    <Trash className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-center py-6 text-muted-foreground">
+                              <p>No geofences created</p>
+                              <p className="text-sm">Click "Add Location" to create one</p>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {geofences.length > 0 && (
+                          <div className="mt-4">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="w-full text-muted-foreground border-dashed"
+                              onClick={resetToDefaultGeofences}
+                            >
+                              Reset to Defaults
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+          
+          {/* Mobile buttons - only shown on smaller screens */}
+          <div className="flex gap-2 mb-4 md:hidden">
+            <Button 
+              onClick={() => {
+                setIsAddingGeofence(true);
+                setGeofenceCreationMethod("map");
+              }}
+              disabled={isAddingGeofence}
+              variant={isAddingGeofence ? "secondary" : "default"}
+              className="flex-1"
+            >
+              <MapPin className="h-4 w-4 mr-2" />
+              Add Location
+            </Button>
+            <Button 
+              onClick={handleOpenDialog}
+              variant="outline"
+              className="flex-1"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              Search Address
+            </Button>
           </div>
         </main>
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
-            <DialogTitle>Create New Geofence</DialogTitle>
+            <DialogTitle>{dialogMode === "create" ? "Create New Geofence" : "Edit Geofence"}</DialogTitle>
             <DialogDescription>
-              Define the properties for your new geofence
+              {dialogMode === "create" 
+                ? "Define a geofence by searching for an address or selecting a location on the map" 
+                : "Modify this geofence's properties"
+              }
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4 py-4">
+          <Tabs 
+            value={geofenceCreationMethod} 
+            onValueChange={(value) => setGeofenceCreationMethod(value as "map" | "address")}
+            className="pt-2"
+          >
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="map">
+                <MapIcon className="h-4 w-4 mr-2" />
+                Map Selection
+              </TabsTrigger>
+              <TabsTrigger value="address" disabled={dialogMode === "edit"}>
+                <Search className="h-4 w-4 mr-2" />
+                Address Search
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="map" className="space-y-4">
+              {!newGeofenceCoords && dialogMode === "create" && (
+                <div className="p-4 text-center border rounded-md bg-muted/30">
+                  <p className="text-muted-foreground">
+                    Close this dialog and click "Click on Map" to select a location on the map.
+                  </p>
+                </div>
+              )}
+              
+              {newGeofenceCoords && (
+                <div className="space-y-2">
+                  <Label>Selected Location</Label>
+                  <div className="p-3 bg-secondary/30 rounded-lg text-sm">
+                    <div className="space-y-1">
+                      <div>Latitude: {newGeofenceCoords.lat.toFixed(6)}</div>
+                      <div>Longitude: {newGeofenceCoords.lng.toFixed(6)}</div>
+                      {locationDisplayName && (
+                        <div className="pt-2 text-xs text-muted-foreground">
+                          {locationDisplayName}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+            
+            <TabsContent value="address" className="space-y-4">
+              <GeofenceAddressSearch 
+                onSelectLocation={handleAddressSelect}
+              />
+              
+              {newGeofenceCoords && locationDisplayName && (
+                <div className="p-3 border rounded-md bg-muted/30">
+                  <p className="font-medium text-sm">Selected Location:</p>
+                  <p className="text-sm text-muted-foreground">{locationDisplayName}</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+          
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="geofence-name">Name</Label>
               <Input 
@@ -210,34 +701,23 @@ const Geofences = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="geofence-profile">Linked Profile</Label>
-              <Select value={newGeofenceProfile || ""} onValueChange={setNewGeofenceProfile}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a profile" />
+              <Label htmlFor="geofence-zonePolicy">Linked Policy</Label>
+              <Select 
+                value={newGeofenceZonePolicy || "none"} 
+                onValueChange={setNewGeofenceZonePolicy}
+              >
+                <SelectTrigger id="geofence-zonePolicy">
+                  <SelectValue placeholder="Select a policy" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">No profile</SelectItem>
-                  {mockProfiles.map((profile) => (
-                    <SelectItem key={profile.id} value={profile.id}>
-                      {profile.name}
+                <SelectContent position="popper" sideOffset={5} className="z-[9999]">
+                  <SelectItem value="none">No policy</SelectItem>
+                  {defaultPolicies.map((policy) => (
+                    <SelectItem key={policy.id} value={policy.id}>
+                      {policy.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <div className="p-3 bg-secondary/30 rounded-lg text-sm">
-                {newGeofenceCoords ? (
-                  <div className="space-y-1">
-                    <div>Latitude: {newGeofenceCoords.lat.toFixed(6)}</div>
-                    <div>Longitude: {newGeofenceCoords.lng.toFixed(6)}</div>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground">No location selected</span>
-                )}
-              </div>
             </div>
           </div>
           
@@ -245,8 +725,11 @@ const Geofences = () => {
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveGeofence}>
-              Create Geofence
+            <Button 
+              onClick={handleSaveGeofence}
+              disabled={!newGeofenceName || !newGeofenceCoords}
+            >
+              {dialogMode === "create" ? "Create Geofence" : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>

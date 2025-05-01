@@ -11,6 +11,7 @@ import Devices from "./pages/Devices";
 import Profiles from "./pages/Profiles";
 import NotFound from "./pages/NotFound";
 import SimpleMDMTest from "./pages/SimpleMDMTest";
+import AppCatalog from "./pages/AppCatalog";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/geofences" element={<Geofences />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/profiles" element={<Profiles />} />
+          <Route path="/app-catalog" element={<AppCatalog />} />
           <Route path="/simplemdm-test" element={<SimpleMDMTest />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

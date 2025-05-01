@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,8 @@ import {
   Settings, 
   LogOut, 
   Menu,
-  User
+  User,
+  AppWindow
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -40,6 +40,7 @@ const Navbar = () => {
     { path: "/geofences", label: "Geofences", icon: <MapPin className="h-4 w-4 mr-2" /> },
     { path: "/devices", label: "Devices", icon: <Smartphone className="h-4 w-4 mr-2" /> },
     { path: "/profiles", label: "Profiles", icon: <Settings className="h-4 w-4 mr-2" /> },
+    { path: "/app-catalog", label: "App Catalog", icon: <AppWindow className="h-4 w-4 mr-2" /> },
   ];
 
   useEffect(() => {
