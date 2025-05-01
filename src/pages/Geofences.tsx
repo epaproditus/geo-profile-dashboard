@@ -230,11 +230,20 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
         </div>
       </CardContent>
       
-      <CardFooter>
-        <Button variant="outline" className="w-full">
+      <CardFooter className="flex gap-2">
+        <Button variant="outline" className="flex-1">
           <Shield className="h-4 w-4 mr-2" />
           Edit Policy Settings
         </Button>
+        {!policy.isDefault && (
+          <Button 
+            variant="destructive" 
+            size="icon"
+            onClick={() => onDeletePolicy(policy.id)}
+          >
+            <Trash className="h-4 w-4" />
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );
@@ -254,6 +263,8 @@ const Geofences = () => {
   const [locationDisplayName, setLocationDisplayName] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
+  const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
+  const [newPolicyName, setNewPolicyName] = useState('');
   
   const { toast } = useToast();
 
@@ -338,6 +349,53 @@ const Geofences = () => {
     setIsDialogOpen(false);
   };
 
+  const handleDeletePolicy = (id: string) => {
+    const updatedPolicies = defaultPolicies.filter(p => p.id !== id);
+    savePoliciesToLocalStorage(updatedPolicies);
+    
+    // Also remove this policy from any geofences
+    const updatedGeofences = geofences.map(g => {
+      if (g.zonePolicyId === id) {
+        return { ...g, zonePolicyId: null };
+      }
+      return g;
+    });
+    setGeofences(updatedGeofences);
+    saveGeofencesToLocalStorage(updatedGeofences);
+    
+    toast({
+      title: "Policy Deleted",
+      description: "The policy has been removed and any associated geofences have been unlinked.",
+    });
+  };
+
+  const handleCreatePolicy = () => {
+    if (!newPolicyName.trim()) return;
+    
+    const newPolicy: ZonePolicy = {
+      id: `policy-${Date.now()}`,
+      name: newPolicyName,
+      description: "",
+      isDefault: false,
+      settings: {
+        cameraBlocked: false,
+        screenLockRequired: false,
+        wifiRestricted: false
+      }
+    };
+    
+    const updatedPolicies = [...defaultPolicies, newPolicy];
+    savePoliciesToLocalStorage(updatedPolicies);
+    
+    setNewPolicyName('');
+    setIsNewPolicyDialogOpen(false);
+    
+    toast({
+      title: "Policy Created",
+      description: `"${newPolicyName}" has been created successfully.`,
+    });
+  };
+
   const handleDeleteGeofence = (id: string) => {
     const updatedGeofences = geofences.filter(g => g.id !== id);
     setGeofences(updatedGeofences);
@@ -399,7 +457,10 @@ const Geofences = () => {
           {/* Page title and action buttons - always visible */}
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
             <h1 className="text-2xl font-bold">Location Policies</h1>
-            
+            <Button onClick={() => setIsNewPolicyDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Policy
+            </Button>
           </div>
           
           {/* Policies view */}
@@ -414,6 +475,7 @@ const Geofences = () => {
                         geofences={geofences}
                         onEditGeofence={handleEditGeofence}
                         onDeleteGeofence={handleDeleteGeofence}
+                        onDeletePolicy={handleDeletePolicy}
                       />
                     ))}
                   </div>
@@ -562,6 +624,42 @@ const Geofences = () => {
               disabled={!newGeofenceName || !newGeofenceCoords}
             >
               {dialogMode === "create" ? "Create Geofence" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Policy Dialog */}
+      <Dialog open={isNewPolicyDialogOpen} onOpenChange={setIsNewPolicyDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Create New Policy</DialogTitle>
+            <DialogDescription>
+              Define a new location policy with custom security settings.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="policy-name">Policy Name</Label>
+              <Input 
+                id="policy-name" 
+                placeholder="e.g., Secure Facility Policy"
+                value={newPolicyName}
+                onChange={(e) => setNewPolicyName(e.target.value)}
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsNewPolicyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreatePolicy}
+              disabled={!newPolicyName.trim()}
+            >
+              Create Policy
             </Button>
           </DialogFooter>
         </DialogContent>
