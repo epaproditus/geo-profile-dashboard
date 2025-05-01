@@ -544,11 +544,19 @@ const Geofences = () => {
               <Button 
                 variant="outline"
                 onClick={() => {
-                  setPolicies(defaultPolicies);
-                  savePoliciesToLocalStorage(defaultPolicies);
+                  if (confirm('This will remove all custom policies. Continue?')) {
+                    // Keep only the default policy
+                    const defaultOnly = policies.filter(p => p.isDefault);
+                    setPolicies(defaultOnly);
+                    savePoliciesToLocalStorage(defaultOnly);
+                    toast({
+                      title: "Policies Reset",
+                      description: "All custom policies have been removed.",
+                    });
+                  }
                 }}
               >
-                Reset Policies
+                Clear All Policies
               </Button>
               <Button onClick={() => setIsNewPolicyDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
