@@ -400,28 +400,6 @@ const Geofences = () => {
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
             <h1 className="text-2xl font-bold">Location Policies</h1>
             
-            {activeView === "locations" && (
-              <div className="flex gap-2 mt-2 md:mt-0">
-                <Button 
-                  onClick={() => {
-                    setIsAddingGeofence(true);
-                    setGeofenceCreationMethod("map");
-                  }}
-                  disabled={isAddingGeofence}
-                  variant={isAddingGeofence ? "secondary" : "default"}
-                >
-                  <MapPin className="h-4 w-4 mr-2" />
-                  Add Location
-                </Button>
-                <Button 
-                  onClick={handleOpenDialog}
-                  variant="outline"
-                >
-                  <Search className="h-4 w-4 mr-2" />
-                  Search
-                </Button>
-              </div>
-            )}
           </div>
           
           {/* Policies view */}
