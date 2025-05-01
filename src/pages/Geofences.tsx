@@ -242,6 +242,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
             size="icon"
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onDeletePolicy(policy.id);
             }}
           >
@@ -355,9 +356,27 @@ const Geofences = () => {
   };
 
   const handleDeletePolicy = (id: string) => {
-    // Prevent deleting default policy
+    // Prevent deleting default policy or last non-default policy
     const policyToDelete = policies.find(p => p.id === id);
-    if (policyToDelete?.isDefault) return;
+    const nonDefaultPolicies = policies.filter(p => !p.isDefault);
+    
+    if (policyToDelete?.isDefault) {
+      toast({
+        title: "Cannot Delete Default Policy",
+        description: "The default policy cannot be deleted.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (nonDefaultPolicies.length <= 1) {
+      toast({
+        title: "Cannot Delete Last Policy",
+        description: "You must have at least one non-default policy.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     // Confirm deletion
     if (!confirm('Are you sure you want to delete this policy? Any associated geofences will be unlinked.')) {
