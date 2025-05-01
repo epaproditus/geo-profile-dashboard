@@ -154,31 +154,6 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
       
       <CardContent>
         <div className="space-y-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Shield className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Security Settings</span>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="flex justify-between items-center p-2 bg-secondary/20 rounded text-sm">
-              <span>Camera Access</span>
-              <Badge variant={policy.settings.cameraBlocked ? "destructive" : "outline"}>
-                {policy.settings.cameraBlocked ? "Blocked" : "Allowed"}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center p-2 bg-secondary/20 rounded text-sm">
-              <span>Screen Lock</span>
-              <Badge variant={policy.settings.screenLockRequired ? "default" : "outline"}>
-                {policy.settings.screenLockRequired ? "Required" : "Optional"}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center p-2 bg-secondary/20 rounded text-sm">
-              <span>Wi-Fi Networks</span>
-              <Badge variant={policy.settings.wifiRestricted ? "destructive" : "outline"}>
-                {policy.settings.wifiRestricted ? "Restricted" : "Allowed"}
-              </Badge>
-            </div>
-          </div>
           
           {policy.isDefault ? (
             <div className="border rounded p-3 bg-secondary/10">
@@ -436,12 +411,7 @@ const Geofences = () => {
       id: `policy-${Date.now()}`,
       name: newPolicyName,
       description: "",
-      isDefault: false,
-      settings: {
-        cameraBlocked: false,
-        screenLockRequired: false,
-        wifiRestricted: false
-      }
+      isDefault: false
     };
     
     const updatedPolicies = [...policies, newPolicy];
