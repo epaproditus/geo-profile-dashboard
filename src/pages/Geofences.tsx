@@ -254,7 +254,6 @@ const Geofences = () => {
   const [locationDisplayName, setLocationDisplayName] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"locations" | "policies">("policies");
   
   const { toast } = useToast();
 
@@ -427,21 +426,8 @@ const Geofences = () => {
             )}
           </div>
           
-          {/* View selector tabs */}
-          <div className="mb-6">
-            <Tabs value={activeView} onValueChange={(value) => setActiveView(value as "locations" | "policies")} className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-0">
-                <TabsTrigger value="policies">
-                  <Shield className="h-4 w-4 mr-2" />
-                  Policies
-                </TabsTrigger>
-                <TabsTrigger value="locations">
-                  <MapPin className="h-4 w-4 mr-2" />
-                  Locations
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="policies" className="mt-4">
+          {/* Policies view */}
+          <div className="mt-4">
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                   {/* Map area (kept in policies view for context) */}
                   <div className="lg:col-span-2">
@@ -474,138 +460,8 @@ const Geofences = () => {
                     ))}
                   </div>
                 </div>
-              </TabsContent>
-              
-              <TabsContent value="locations" className="mt-4">
-                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                  {/* Map area */}
-                  <div className="lg:col-span-2">
-                    <Card>
-                      <CardContent className="p-0">
-                        <Map 
-                          geofences={geofences}
-                          selectedGeofence={selectedGeofence}
-                          onSelectGeofence={setSelectedGeofence}
-                          isAddingGeofence={isAddingGeofence}
-                          onAddGeofence={handleAddGeofence}
-                          center={newGeofenceCoords 
-                            ? [newGeofenceCoords.lng, newGeofenceCoords.lat] 
-                            : undefined}
-                        />
-                      </CardContent>
-                    </Card>
-                  </div>
-                  
-                  {/* Geofence list (original view) */}
-                  <div className="lg:col-span-3">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle>Geofence List</CardTitle>
-                        <CardDescription>
-                          {geofences.length} geofence{geofences.length !== 1 ? 's' : ''}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          {geofences.length > 0 ? (
-                            geofences.map((geofence) => (
-                              <div 
-                                key={geofence.id}
-                                className={`flex justify-between items-center p-3 rounded-lg cursor-pointer ${
-                                  selectedGeofence === geofence.id 
-                                    ? 'bg-primary/10 border border-primary/30' 
-                                    : 'bg-secondary/30 hover:bg-secondary/50'
-                                }`}
-                                onClick={() => setSelectedGeofence(geofence.id)}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <MapPin className="h-5 w-5 text-muted-foreground" />
-                                  <div className="flex flex-col">
-                                    <span className="font-medium">{geofence.name}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {geofence.zonePolicyId 
-                                        ? `Policy: ${defaultPolicies.find(p => p.id === geofence.zonePolicyId)?.name || 'Unknown'}` 
-                                        : 'No policy assigned'}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center space-x-1">
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon"
-                                    className="opacity-50 hover:opacity-100 hover:bg-primary/10 hover:text-primary"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleEditGeofence(geofence.id);
-                                    }}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon"
-                                    className="opacity-50 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteGeofence(geofence.id);
-                                    }}
-                                  >
-                                    <Trash className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="text-center py-6 text-muted-foreground">
-                              <p>No geofences created</p>
-                              <p className="text-sm">Click "Add Location" to create one</p>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {geofences.length > 0 && (
-                          <div className="mt-4">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="w-full text-muted-foreground border-dashed"
-                              onClick={resetToDefaultGeofences}
-                            >
-                              Reset to Defaults
-                            </Button>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
           </div>
           
-          {/* Mobile buttons - only shown on smaller screens */}
-          <div className="flex gap-2 mb-4 md:hidden">
-            <Button 
-              onClick={() => {
-                setIsAddingGeofence(true);
-                setGeofenceCreationMethod("map");
-              }}
-              disabled={isAddingGeofence}
-              variant={isAddingGeofence ? "secondary" : "default"}
-              className="flex-1"
-            >
-              <MapPin className="h-4 w-4 mr-2" />
-              Add Location
-            </Button>
-            <Button 
-              onClick={handleOpenDialog}
-              variant="outline"
-              className="flex-1"
-            >
-              <Search className="h-4 w-4 mr-2" />
-              Search Address
-            </Button>
-          </div>
         </main>
       </div>
 
