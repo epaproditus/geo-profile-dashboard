@@ -39,11 +39,6 @@ interface ZonePolicy {
   name: string;
   description: string;
   isDefault: boolean;
-  settings: {
-    cameraBlocked: boolean;
-    screenLockRequired: boolean;
-    wifiRestricted: boolean;
-  };
 }
 
 // LocalStorage helper functions
@@ -59,12 +54,7 @@ const defaultPolicies: ZonePolicy[] = [
     id: "default-policy", 
     name: "Default (Fallback) Policy", 
     description: "Applied when devices are outside all defined locations", 
-    isDefault: true,
-    settings: {
-      cameraBlocked: false,
-      screenLockRequired: false,
-      wifiRestricted: false
-    }
+    isDefault: true
   }
 ];
 
