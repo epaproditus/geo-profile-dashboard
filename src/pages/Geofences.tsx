@@ -405,6 +405,19 @@ const Geofences = () => {
           {/* Policies view */}
           <div className="mt-4">
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                  {/* Policy cards with associated locations */}
+                  <div className="lg:col-span-3 space-y-6">
+                    {defaultPolicies.map(policy => (
+                      <PolicyCard 
+                        key={policy.id}
+                        policy={policy}
+                        geofences={geofences}
+                        onEditGeofence={handleEditGeofence}
+                        onDeleteGeofence={handleDeleteGeofence}
+                      />
+                    ))}
+                  </div>
+                  
                   {/* Map area (kept in policies view for context) */}
                   <div className="lg:col-span-2">
                     <Card>
@@ -421,19 +434,6 @@ const Geofences = () => {
                         />
                       </CardContent>
                     </Card>
-                  </div>
-                  
-                  {/* Policy cards with associated locations */}
-                  <div className="lg:col-span-3 space-y-6">
-                    {defaultPolicies.map(policy => (
-                      <PolicyCard 
-                        key={policy.id}
-                        policy={policy}
-                        geofences={geofences}
-                        onEditGeofence={handleEditGeofence}
-                        onDeleteGeofence={handleDeleteGeofence}
-                      />
-                    ))}
                   </div>
                 </div>
           </div>
