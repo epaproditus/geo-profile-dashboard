@@ -159,7 +159,6 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
       
       <CardContent>
         <div className="space-y-3">
-          
           <div className="border rounded p-3 bg-secondary/10">
             {policy.isDefault ? (
               <div className="flex items-center gap-2">
@@ -186,51 +185,54 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
               </div>
             )}
           </div>
-          ) : policyGeofences.length > 0 ? (
-            <div className="space-y-2 mt-2">
+
+          {!policy.isDefault && (
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Applied in locations:</span>
               </div>
-              <div className="space-y-2">
-                {policyGeofences.map(geofence => (
-                  <div 
-                    key={geofence.id}
-                    className="flex justify-between items-center p-2 bg-secondary/20 rounded-lg"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{geofence.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {geofence.radius}m radius
-                      </span>
+              {policyGeofences.length > 0 ? (
+                <div className="space-y-2">
+                  {policyGeofences.map(geofence => (
+                    <div 
+                      key={geofence.id}
+                      className="flex justify-between items-center p-2 bg-secondary/20 rounded-lg"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{geofence.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {geofence.radius}m radius
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-primary/10"
+                          onClick={() => onEditGeofence(geofence.id)}
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => onDeleteGeofence(geofence.id)}
+                        >
+                          <Trash className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-primary/10"
-                        onClick={() => onEditGeofence(geofence.id)}
-                      >
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        className="h-7 w-7 opacity-50 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => onDeleteGeofence(geofence.id)}
-                      >
-                        <Trash className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="border rounded p-3 bg-secondary/10">
-              <p className="text-sm text-muted-foreground">
-                This policy is not applied to any locations.
-              </p>
+                  ))}
+                </div>
+              ) : (
+                <div className="border rounded p-3 bg-secondary/10">
+                  <p className="text-sm text-muted-foreground">
+                    This policy is not applied to any locations.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
