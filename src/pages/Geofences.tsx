@@ -129,6 +129,7 @@ interface PolicyCardProps {
   onEditGeofence: (id: string) => void;
   onDeleteGeofence: (id: string) => void;
   onDeletePolicy: (id: string) => void;
+  onEditPolicy: (policy: ZonePolicy) => void;
 }
 
 const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofence, onDeleteGeofence, onDeletePolicy }) => {
@@ -217,7 +218,11 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
       </CardContent>
       
       <CardFooter className="flex gap-2">
-        <Button variant="outline" className="flex-1">
+        <Button 
+          variant="outline" 
+          className="flex-1"
+          onClick={() => onEditPolicy(policy)}
+        >
           <Shield className="h-4 w-4 mr-2" />
           Edit Policy Settings
         </Button>
@@ -277,7 +282,9 @@ const Geofences = () => {
     return loadedPolicies;
   });
   const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
+  const [isEditPolicyDialogOpen, setIsEditPolicyDialogOpen] = useState(false);
   const [newPolicyName, setNewPolicyName] = useState('');
+  const [editingPolicy, setEditingPolicy] = useState<ZonePolicy | null>(null);
   
   const { toast } = useToast();
 
@@ -362,6 +369,23 @@ const Geofences = () => {
     setIsDialogOpen(false);
   };
 
+  const handleUpdatePolicy = () => {
+    if (!editingPolicy) return;
+    
+    const updatedPolicies = policies.map(p => 
+      p.id === editingPolicy.id ? editingPolicy : p
+    );
+    
+    setPolicies(updatedPolicies);
+    savePoliciesToLocalStorage(updatedPolicies);
+    setIsEditPolicyDialogOpen(false);
+    
+    toast({
+      title: "Policy Updated",
+      description: `"${editingPolicy.name}" has been updated successfully.`,
+    });
+  };
+
   const handleDeletePolicy = (id: string) => {
     const policyToDelete = policies.find(p => p.id === id);
     if (!policyToDelete) return;
@@ -404,6 +428,11 @@ const Geofences = () => {
       title: "Policy Deleted",
       description: "The policy has been removed and any associated geofences have been unlinked.",
     });
+  };
+
+  const handleEditPolicy = (policy: ZonePolicy) => {
+    setEditingPolicy(policy);
+    setIsEditPolicyDialogOpen(true);
   };
 
   const handleCreatePolicy = () => {
@@ -529,6 +558,7 @@ const Geofences = () => {
                         onEditGeofence={handleEditGeofence}
                         onDeleteGeofence={handleDeleteGeofence}
                         onDeletePolicy={handleDeletePolicy}
+                        onEditPolicy={handleEditPolicy}
                       />
                     ))}
                   </div>
@@ -713,6 +743,53 @@ const Geofences = () => {
               disabled={!newPolicyName.trim()}
             >
               Create Policy
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Policy Dialog */}
+      <Dialog open={isEditPolicyDialogOpen} onOpenChange={setIsEditPolicyDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Policy</DialogTitle>
+            <DialogDescription>
+              Update the policy details.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-policy-name">Policy Name</Label>
+              <Input 
+                id="edit-policy-name" 
+                value={editingPolicy?.name || ''}
+                onChange={(e) => setEditingPolicy(prev => 
+                  prev ? {...prev, name: e.target.value} : null
+                )}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-policy-desc">Description</Label>
+              <Input 
+                id="edit-policy-desc" 
+                value={editingPolicy?.description || ''}
+                onChange={(e) => setEditingPolicy(prev => 
+                  prev ? {...prev, description: e.target.value} : null
+                )}
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditPolicyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdatePolicy}
+              disabled={!editingPolicy?.name.trim()}
+            >
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
