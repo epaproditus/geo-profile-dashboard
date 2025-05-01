@@ -394,6 +394,19 @@ const Geofences = () => {
   const handleUpdatePolicy = () => {
     if (!editingPolicy) return;
     
+    // Validate location for non-default policies
+    if (!editingPolicy.isDefault) {
+      const { latitude, longitude, displayName } = editingPolicy.location;
+      if (!latitude || !longitude || !displayName) {
+        toast({
+          title: "Invalid Location",
+          description: "Please select a valid location for the policy",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+    
     const updatedPolicies = policies.map(p => 
       p.id === editingPolicy.id ? editingPolicy : p
     );
@@ -820,11 +833,11 @@ const Geofences = () => {
 
       {/* Edit Policy Dialog */}
       <Dialog open={isEditPolicyDialogOpen} onOpenChange={setIsEditPolicyDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle>Edit Policy</DialogTitle>
             <DialogDescription>
-              Update the policy details.
+              Update the policy name, description and location.
             </DialogDescription>
           </DialogHeader>
           
@@ -839,6 +852,7 @@ const Geofences = () => {
                 )}
               />
             </div>
+            
             <div className="space-y-2">
               <Label htmlFor="edit-policy-desc">Description</Label>
               <Input 
@@ -848,6 +862,43 @@ const Geofences = () => {
                   prev ? {...prev, description: e.target.value} : null
                 )}
               />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <div className="border rounded-md p-4">
+                {editingPolicy && !editingPolicy.isDefault && (
+                  <>
+                    <div className="mb-4">
+                      <p className="font-medium">{editingPolicy.location.displayName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {editingPolicy.location.latitude.toFixed(6)}, {editingPolicy.location.longitude.toFixed(6)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Radius: {editingPolicy.location.radius}m
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Change Location</Label>
+                      <GeofenceAddressSearch 
+                        onSelectLocation={(lat, lng, displayName) => {
+                          if (!editingPolicy) return;
+                          setEditingPolicy({
+                            ...editingPolicy,
+                            location: {
+                              ...editingPolicy.location,
+                              latitude: lat,
+                              longitude: lng,
+                              displayName: displayName
+                            }
+                          });
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           
