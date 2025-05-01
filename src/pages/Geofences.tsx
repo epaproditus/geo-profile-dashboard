@@ -67,9 +67,9 @@ const defaultPolicies: ZonePolicy[] = [
     }
   },
   { 
-    id: "test-policy", 
-    name: "Test Policy (Can Delete)", 
-    description: "This is a test policy that can be deleted", 
+    id: "test-policy-1", 
+    name: "Office Policy", 
+    description: "Policy for office locations", 
     isDefault: false,
     settings: {
       cameraBlocked: true,
@@ -77,6 +77,17 @@ const defaultPolicies: ZonePolicy[] = [
       wifiRestricted: false
     }
   },
+  { 
+    id: "test-policy-2", 
+    name: "Home Policy", 
+    description: "Policy for home locations", 
+    isDefault: false,
+    settings: {
+      cameraBlocked: false,
+      screenLockRequired: false,
+      wifiRestricted: true
+    }
+  }
 ];
 
 // Save geofences to localStorage
@@ -116,7 +127,13 @@ const savePoliciesToLocalStorage = (policies: ZonePolicy[]) => {
 const loadPoliciesFromLocalStorage = (): ZonePolicy[] => {
   try {
     const savedPolicies = localStorage.getItem(POLICY_STORAGE_KEY);
-    return savedPolicies ? JSON.parse(savedPolicies) : defaultPolicies;
+    if (savedPolicies) {
+      // Merge with defaults to ensure we always have the default policy
+      const parsed = JSON.parse(savedPolicies);
+      const hasDefault = parsed.some((p: ZonePolicy) => p.isDefault);
+      return hasDefault ? parsed : [...parsed, defaultPolicies[0]];
+    }
+    return defaultPolicies;
   } catch (error) {
     console.error('Error loading policies from localStorage:', error);
     return defaultPolicies;
@@ -290,7 +307,11 @@ const Geofences = () => {
   const [locationDisplayName, setLocationDisplayName] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
-  const [policies, setPolicies] = useState<ZonePolicy[]>(loadPoliciesFromLocalStorage());
+  const [policies, setPolicies] = useState<ZonePolicy[]>(() => {
+    const loadedPolicies = loadPoliciesFromLocalStorage();
+    console.log('Loaded policies:', loadedPolicies);
+    return loadedPolicies;
+  });
   const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
   const [newPolicyName, setNewPolicyName] = useState('');
   
