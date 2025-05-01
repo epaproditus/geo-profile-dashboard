@@ -266,7 +266,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           <Shield className="h-4 w-4 mr-2" />
           Edit Policy Settings
         </Button>
-        {!policy.isDefault && (
+        {!policy.isDefault ? (
           <Button 
             variant="destructive" 
             size="icon"
@@ -278,8 +278,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           >
             <Trash className="h-4 w-4" />
           </Button>
-        )}
-        {policy.isDefault && (
+        ) : (
           <Button 
             variant="ghost" 
             size="icon"
@@ -422,16 +421,6 @@ const Geofences = () => {
       return;
     }
 
-    // Check if this is the last non-default policy
-    const nonDefaultPolicies = policies.filter(p => !p.isDefault);
-    if (nonDefaultPolicies.length <= 1) {
-      toast({
-        title: "Cannot Delete Last Policy",
-        description: "You must have at least one non-default policy.",
-        variant: "destructive"
-      });
-      return;
-    }
 
     // Debug log to confirm the function is being called
     console.log('Attempting to delete policy:', id);
