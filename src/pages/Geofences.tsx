@@ -61,9 +61,9 @@ const defaultPolicies: ZonePolicy[] = [
     description: "Applied when devices are outside all defined locations", 
     isDefault: true,
     settings: {
-      cameraBlocked: false,
-      screenLockRequired: false,
-      wifiRestricted: false
+      cameraBlocked: true,       // Block camera by default
+      screenLockRequired: true,  // Require screen lock
+      wifiRestricted: false      // Keep Wi-Fi allowed
     }
   },
   { 
