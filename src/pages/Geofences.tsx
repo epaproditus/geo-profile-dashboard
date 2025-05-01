@@ -18,11 +18,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Plus, Trash, Search, Map as MapIcon, Edit, Shield, Check, Info } from "lucide-react";
+import { MapPin, Plus, Trash, Search, Map as MapIcon, Edit, Shield, Check, Info, Smartphone } from "lucide-react";
 import GeofenceAddressSearch from "@/components/geofences/GeofenceAddressSearch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import PolicyLocationSearch from '@/components/geofences/PolicyLocationSearch';
+import DeviceSelector from '@/components/geofences/DeviceSelector';
 
 // Type for geofence objects
 interface Geofence {
@@ -46,6 +47,10 @@ interface ZonePolicy {
     longitude: number;
     radius: number; // in meters
     geofenceId: string; // Reference to the geofence
+  }[];
+  devices: {
+    id: string;
+    name: string;
   }[];
 }
 
@@ -71,7 +76,8 @@ const defaultPolicies: ZonePolicy[] = [
         radius: 1000, // 1km radius - a reasonable starting point
         geofenceId: "default-geofence"
       }
-    ]
+    ],
+    devices: [] // Empty array of devices by default
   }
 ];
 
@@ -126,7 +132,8 @@ const loadPoliciesFromLocalStorage = (): ZonePolicy[] => {
             description: policy.description,
             isDefault: policy.isDefault,
             // Convert single location to locations array
-            locations: [policy.location]
+            locations: [policy.location],
+            devices: policy.devices || []
           };
           return cleanedPolicy;
         }
@@ -266,6 +273,26 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
               This policy will apply when a device is outside all other defined locations.
             </p>
           )}
+
+          {/* Display attached devices if any */}
+          {policy.devices.length > 0 && (
+            <div className="mt-4 border-t pt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Smartphone className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">Attached Devices ({policy.devices.length})</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {policy.devices.map(device => (
+                  <div 
+                    key={device.id}
+                    className="bg-secondary text-secondary-foreground rounded-md px-2 py-1 text-xs flex items-center gap-1"
+                  >
+                    <span>{device.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
       
@@ -324,13 +351,14 @@ const Geofences = () => {
     const loadedPolicies = loadPoliciesFromLocalStorage();
     console.log('Loaded policies:', loadedPolicies);
     
-    // Ensure we always have at least the default policies
+    // Ensure we always have at least the default policy
     const hasDefault = loadedPolicies.some(p => p.isDefault);
-    const hasTestPolicies = loadedPolicies.some(p => p.id === "test-policy-1" || p.id === "test-policy-2");
     
-    if (!hasDefault || !hasTestPolicies) {
-      return defaultPolicies;
+    if (!hasDefault) {
+      // If there's no default policy, add it to the loaded policies
+      return [...loadedPolicies, ...defaultPolicies.filter(p => p.isDefault)];
     }
+    
     return loadedPolicies;
   });
   const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
@@ -345,8 +373,39 @@ const Geofences = () => {
   } | null>(null);
   const [editingPolicy, setEditingPolicy] = useState<ZonePolicy | null>(null);
   const [selectedGeofenceForPolicy, setSelectedGeofenceForPolicy] = useState<string | null>(null);
+  const [newPolicyDevices, setNewPolicyDevices] = useState<{
+    id: string;
+    name: string;
+  }[]>([]);
   
   const { toast } = useToast();
+
+  useEffect(() => {
+    // Debug log to help track rendering issues
+    console.log('Current policies state:', policies);
+    
+    // Ensure all policies have necessary properties for display
+    if (policies.length > 0) {
+      const updatedPolicies = policies.map(policy => ({
+        ...policy,
+        // Ensure devices exists
+        devices: policy.devices || [],
+        // Ensure locations is an array
+        locations: Array.isArray(policy.locations) 
+          ? policy.locations 
+          : policy.location 
+            ? [policy.location] 
+            : []
+      }));
+      
+      // Only update if there's a difference
+      if (JSON.stringify(updatedPolicies) !== JSON.stringify(policies)) {
+        console.log('Fixing policy structure:', updatedPolicies);
+        setPolicies(updatedPolicies);
+        savePoliciesToLocalStorage(updatedPolicies);
+      }
+    }
+  }, []);
 
   const handleAddGeofence = (lat: number, lng: number) => {
     setNewGeofenceCoords({ lat, lng });
@@ -536,7 +595,7 @@ const Geofences = () => {
     setIsEditPolicyDialogOpen(true);
   };
 
-  // Update the handleCreatePolicy function to handle multiple locations
+  // Update the handleCreatePolicy function to handle multiple locations and devices
   const handleCreatePolicy = () => {
     if (!newPolicyName.trim()) {
       toast({
@@ -559,7 +618,8 @@ const Geofences = () => {
             ...newPolicyLocation,
             geofenceId: `geo-${Date.now()}` // Generate a unique ID for the location
           }
-        ]
+        ],
+        devices: newPolicyDevices // Include the selected devices
       };
       
       const updatedPolicies = [...policies, newPolicy];
@@ -569,6 +629,7 @@ const Geofences = () => {
       setNewPolicyName('');
       setNewPolicyDescription('');
       setNewPolicyLocation(null);
+      setNewPolicyDevices([]); // Reset selected devices
       setIsNewPolicyDialogOpen(false);
       
       toast({
@@ -836,12 +897,33 @@ const Geofences = () => {
 
             <Separator className="my-4" />
             
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <PolicyLocationSearch
-                onLocationSelect={(location) => setNewPolicyLocation(location)}
-              />
-            </div>
+            <Tabs defaultValue="locations" className="w-full mt-4">
+              <TabsList className="grid grid-cols-2">
+                <TabsTrigger value="locations">
+                  <MapPin className="h-4 w-4 mr-2" />
+                  Locations
+                </TabsTrigger>
+                <TabsTrigger value="devices">
+                  <Smartphone className="h-4 w-4 mr-2" />
+                  Devices
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="locations" className="pt-4">
+                <PolicyLocationSearch
+                  onLocationSelect={(location) => setNewPolicyLocation(location)}
+                />
+              </TabsContent>
+              
+              <TabsContent value="devices" className="pt-4">
+                <div className="space-y-4">
+                  <DeviceSelector
+                    selectedDevices={newPolicyDevices}
+                    onSelectionChange={setNewPolicyDevices}
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
           
           <DialogFooter>
@@ -935,54 +1017,82 @@ const Geofences = () => {
                   </div>
                 )}
                 
-                {/* Display tabs for multiple locations */}
-                {editingPolicy.locations.length > 0 && (
-                  <Tabs defaultValue="0" className="w-full">
-                    <TabsList className="grid" style={{ gridTemplateColumns: `repeat(${Math.min(editingPolicy.locations.length, 4)}, 1fr)` }}>
-                      {editingPolicy.locations.map((_, index) => (
-                        <TabsTrigger key={index} value={index.toString()}>
-                          Location {index + 1}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                    
-                    {editingPolicy.locations.map((location, index) => (
-                      <TabsContent key={index} value={index.toString()} className="relative">
-                        <PolicyLocationSearch
-                          initialLocation={location}
-                          onLocationSelect={(updatedLocation) => 
-                            setEditingPolicy(prev => {
-                              if (!prev) return null;
-                              const newLocations = [...prev.locations];
-                              newLocations[index] = updatedLocation;
-                              return {...prev, locations: newLocations};
-                            })
-                          }
-                        />
+                <Tabs defaultValue="locations" className="w-full mt-4">
+                  <TabsList className="grid grid-cols-2">
+                    <TabsTrigger value="locations">
+                      <MapPin className="h-4 w-4 mr-2" />
+                      Locations
+                    </TabsTrigger>
+                    <TabsTrigger value="devices">
+                      <Smartphone className="h-4 w-4 mr-2" />
+                      Devices
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="locations" className="pt-4">
+                    {/* Display tabs for multiple locations */}
+                    {editingPolicy.locations.length > 0 && (
+                      <Tabs defaultValue="0" className="w-full">
+                        <TabsList className="grid" style={{ gridTemplateColumns: `repeat(${Math.min(editingPolicy.locations.length, 4)}, 1fr)` }}>
+                          {editingPolicy.locations.map((_, index) => (
+                            <TabsTrigger key={index} value={index.toString()}>
+                              Location {index + 1}
+                            </TabsTrigger>
+                          ))}
+                        </TabsList>
                         
-                        {/* Delete location button - only show if there's more than one location */}
-                        {editingPolicy.locations.length > 1 && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            className="absolute top-0 right-0"
-                            onClick={() => {
-                              setEditingPolicy(prev => {
-                                if (!prev) return null;
-                                const newLocations = [...prev.locations];
-                                newLocations.splice(index, 1);
-                                return {...prev, locations: newLocations};
-                              });
-                            }}
-                          >
-                            <Trash className="h-4 w-4 mr-2" />
-                            Remove Location
-                          </Button>
-                        )}
-                      </TabsContent>
-                    ))}
-                  </Tabs>
-                )}
+                        {editingPolicy.locations.map((location, index) => (
+                          <TabsContent key={index} value={index.toString()} className="relative">
+                            <PolicyLocationSearch
+                              initialLocation={location}
+                              onLocationSelect={(updatedLocation) => 
+                                setEditingPolicy(prev => {
+                                  if (!prev) return null;
+                                  const newLocations = [...prev.locations];
+                                  newLocations[index] = updatedLocation;
+                                  return {...prev, locations: newLocations};
+                                })
+                              }
+                            />
+                            
+                            {/* Delete location button - only show if there's more than one location */}
+                            {editingPolicy.locations.length > 1 && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="absolute top-0 right-0"
+                                onClick={() => {
+                                  setEditingPolicy(prev => {
+                                    if (!prev) return null;
+                                    const newLocations = [...prev.locations];
+                                    newLocations.splice(index, 1);
+                                    return {...prev, locations: newLocations};
+                                  });
+                                }}
+                              >
+                                <Trash className="h-4 w-4 mr-2" />
+                                Remove Location
+                              </Button>
+                            )}
+                          </TabsContent>
+                        ))}
+                      </Tabs>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="devices" className="pt-4">
+                    <div className="space-y-4">
+                      <DeviceSelector
+                        selectedDevices={editingPolicy?.devices || []}
+                        onSelectionChange={(devices) => 
+                          setEditingPolicy(prev => 
+                            prev ? {...prev, devices} : null
+                          )
+                        }
+                      />
+                    </div>
+                  </TabsContent>
+                </Tabs>
               </div>
             )}
           </div>
