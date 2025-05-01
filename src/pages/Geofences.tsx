@@ -396,11 +396,27 @@ const Geofences = () => {
     
     // Validate location for non-default policies
     if (!editingPolicy.isDefault) {
-      const { latitude, longitude, displayName } = editingPolicy.location;
-      if (!latitude || !longitude || !displayName) {
+      const { latitude, longitude, displayName, radius } = editingPolicy.location;
+      if (!displayName.trim()) {
         toast({
-          title: "Invalid Location",
-          description: "Please select a valid location for the policy",
+          title: "Invalid Location Name",
+          description: "Please enter a name for the location",
+          variant: "destructive"
+        });
+        return;
+      }
+      if (isNaN(latitude) || isNaN(longitude)) {
+        toast({
+          title: "Invalid Coordinates",
+          description: "Please enter valid latitude and longitude values",
+          variant: "destructive"
+        });
+        return;
+      }
+      if (isNaN(radius) || radius <= 0) {
+        toast({
+          title: "Invalid Radius",
+          description: "Please enter a positive radius value in meters",
           variant: "destructive"
         });
         return;
@@ -864,42 +880,92 @@ const Geofences = () => {
               />
             </div>
             
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <div className="border rounded-md p-4">
-                {editingPolicy && !editingPolicy.isDefault && (
-                  <>
-                    <div className="mb-4">
-                      <p className="font-medium">{editingPolicy.location.displayName}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {editingPolicy.location.latitude.toFixed(6)}, {editingPolicy.location.longitude.toFixed(6)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Radius: {editingPolicy.location.radius}m
-                      </p>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Change Location</Label>
-                      <GeofenceAddressSearch 
-                        onSelectLocation={(lat, lng, displayName) => {
-                          if (!editingPolicy) return;
-                          setEditingPolicy({
-                            ...editingPolicy,
-                            location: {
-                              ...editingPolicy.location,
-                              latitude: lat,
-                              longitude: lng,
-                              displayName: displayName
-                            }
-                          });
-                        }}
+            {editingPolicy && !editingPolicy.isDefault && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Location Name</Label>
+                  <Input
+                    value={editingPolicy.location.displayName}
+                    onChange={(e) => setEditingPolicy({
+                      ...editingPolicy,
+                      location: {
+                        ...editingPolicy.location,
+                        displayName: e.target.value
+                      }
+                    })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Coordinates</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="latitude" className="text-xs">Latitude</Label>
+                      <Input
+                        id="latitude"
+                        type="number"
+                        value={editingPolicy.location.latitude}
+                        onChange={(e) => setEditingPolicy({
+                          ...editingPolicy,
+                          location: {
+                            ...editingPolicy.location,
+                            latitude: parseFloat(e.target.value) || 0
+                          }
+                        })}
                       />
                     </div>
-                  </>
-                )}
+                    <div>
+                      <Label htmlFor="longitude" className="text-xs">Longitude</Label>
+                      <Input
+                        id="longitude"
+                        type="number"
+                        value={editingPolicy.location.longitude}
+                        onChange={(e) => setEditingPolicy({
+                          ...editingPolicy,
+                          location: {
+                            ...editingPolicy.location,
+                            longitude: parseFloat(e.target.value) || 0
+                          }
+                        })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="radius">Radius (meters)</Label>
+                  <Input
+                    id="radius"
+                    type="number"
+                    value={editingPolicy.location.radius}
+                    onChange={(e) => setEditingPolicy({
+                      ...editingPolicy,
+                      location: {
+                        ...editingPolicy.location,
+                        radius: parseFloat(e.target.value) || 0
+                      }
+                    })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Or search by address:</Label>
+                  <GeofenceAddressSearch 
+                    onSelectLocation={(lat, lng, displayName) => {
+                      setEditingPolicy({
+                        ...editingPolicy,
+                        location: {
+                          ...editingPolicy.location,
+                          latitude: lat,
+                          longitude: lng,
+                          displayName: displayName
+                        }
+                      });
+                    }}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
           
           <DialogFooter>
