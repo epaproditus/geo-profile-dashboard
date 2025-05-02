@@ -4,9 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import GeofenceAddressSearch from './GeofenceAddressSearch';
 import { Card, CardContent } from "@/components/ui/card";
-import { MapPin, Crosshair, Loader2 } from 'lucide-react';
+import { MapPin, Crosshair, Loader2, AlertCircle } from 'lucide-react';
 import Map from '@/components/Map';
 import { reverseGeocode } from '@/lib/services/geocoding';
+import { useToast } from "@/components/ui/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface PolicyLocationSearchProps {
   initialLocation?: {
@@ -31,6 +33,7 @@ const PolicyLocationSearch: React.FC<PolicyLocationSearchProps> = ({
   onLocationSelect,
   isLoading = false
 }) => {
+  const { toast } = useToast();
   const [location, setLocation] = useState(initialLocation || {
     displayName: '',
     latitude: 0,
@@ -45,6 +48,7 @@ const PolicyLocationSearch: React.FC<PolicyLocationSearchProps> = ({
   
   const [mapZoom, setMapZoom] = useState(initialLocation ? 13 : 4);
   const [isGettingCurrentLocation, setIsGettingCurrentLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   
   // Update the local state when initialLocation changes (for editing scenarios)
   useEffect(() => {
@@ -60,6 +64,9 @@ const PolicyLocationSearch: React.FC<PolicyLocationSearchProps> = ({
   }, [initialLocation]);
 
   const handleAddressSelect = (lat: number, lng: number, displayName: string) => {
+    // Clear any previous location errors when a new address is selected
+    setLocationError(null);
+    
     const newLocation = {
       displayName,
       latitude: lat,
@@ -91,9 +98,15 @@ const PolicyLocationSearch: React.FC<PolicyLocationSearchProps> = ({
   
   const handleGetCurrentLocation = async () => {
     setIsGettingCurrentLocation(true);
+    setLocationError(null);
     
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
+      setLocationError("Geolocation is not supported by your browser");
+      toast({
+        title: "Location Error",
+        description: "Geolocation is not supported by your browser. Please search for a location instead.",
+        variant: "destructive"
+      });
       setIsGettingCurrentLocation(false);
       return;
     }
@@ -114,6 +127,7 @@ const PolicyLocationSearch: React.FC<PolicyLocationSearchProps> = ({
             }
           } catch (error) {
             console.error("Error reverse geocoding:", error);
+            // Still continue with coordinates as the display name
           }
           
           const newLocation = {
@@ -132,17 +146,46 @@ const PolicyLocationSearch: React.FC<PolicyLocationSearchProps> = ({
         },
         (error) => {
           console.error("Error getting current location:", error);
-          alert(`Error getting your location: ${error.message}`);
+          
+          // Set appropriate error message based on the error code
+          let errorMessage = "Unknown error occurred while retrieving your location.";
+          
+          switch(error.code) {
+            case 1: // PERMISSION_DENIED
+              errorMessage = "Location permission denied. Please enable location services in your browser settings.";
+              break;
+            case 2: // POSITION_UNAVAILABLE
+              errorMessage = "Your current location is unavailable. The GPS signal might be weak or obstructed.";
+              break;
+            case 3: // TIMEOUT
+              errorMessage = "Location request timed out. Please try again.";
+              break;
+          }
+          
+          setLocationError(errorMessage);
+          
+          toast({
+            title: "Location Error",
+            description: errorMessage,
+            variant: "destructive"
+          });
+          
           setIsGettingCurrentLocation(false);
         },
         { 
           enableHighAccuracy: true,
-          timeout: 10000,
+          timeout: 15000, // Increased timeout to 15 seconds
           maximumAge: 0
         }
       );
     } catch (error) {
       console.error("Error accessing geolocation:", error);
+      setLocationError("Unexpected error accessing location services. Please try searching for an address instead.");
+      toast({
+        title: "Location Error",
+        description: "Failed to access location services. Please try searching for an address instead.",
+        variant: "destructive"
+      });
       setIsGettingCurrentLocation(false);
     }
   };
@@ -184,6 +227,14 @@ const PolicyLocationSearch: React.FC<PolicyLocationSearchProps> = ({
             )}
           </Button>
         </div>
+        
+        {locationError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Location Error</AlertTitle>
+            <AlertDescription>{locationError}</AlertDescription>
+          </Alert>
+        )}
         
         <GeofenceAddressSearch 
           onSelectLocation={handleAddressSelect}

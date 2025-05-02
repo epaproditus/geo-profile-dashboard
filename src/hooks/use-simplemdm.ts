@@ -45,6 +45,16 @@ export const useUpdateDeviceLocation = () => {
   });
 };
 
+// Helper function to check if a device is sharing its location (updated within the last 5 minutes)
+export const isLocationSharing = (device: SimpleMDMDevice | undefined): boolean => {
+  if (!device || !device.attributes.location_updated_at) return false;
+  
+  const locationUpdatedAt = new Date(device.attributes.location_updated_at);
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes in milliseconds
+  
+  return locationUpdatedAt > fiveMinutesAgo;
+};
+
 // Hook to fetch all apps in the app catalog
 export const useApps = (params?: { limit?: number; starting_after?: string }) => {
   return useQuery<SimpleMDMListResponse<SimpleMDMApp>>({

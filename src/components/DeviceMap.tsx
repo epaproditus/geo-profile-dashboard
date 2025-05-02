@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Map from './Map';
 import { useDevices, useUpdateDeviceLocation } from '@/hooks/use-simplemdm';
 import { Button } from './ui/button';
@@ -14,6 +14,8 @@ const DeviceMap = ({ policies = [] }: DeviceMapProps) => {
   const updateLocation = useUpdateDeviceLocation();
   const [mappableDevices, setMappableDevices] = useState<any[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Add auto-refresh interval reference
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   useEffect(() => {
     // Filter devices that have location data
@@ -54,10 +56,32 @@ const DeviceMap = ({ policies = [] }: DeviceMapProps) => {
     }
   }, [devicesData, policies]);
 
+  // Add auto-refresh effect to update device locations every 5 minutes
+  useEffect(() => {
+    // Start the auto-refresh interval when the component mounts
+    if (refreshIntervalRef.current === null) {
+      console.log('Setting up automatic location refresh every 5 minutes');
+      refreshIntervalRef.current = setInterval(() => {
+        console.log('Auto-refreshing device locations');
+        handleRefreshLocations();
+      }, 5 * 60 * 1000); // 5 minutes in milliseconds
+    }
+    
+    // Clean up the interval when the component unmounts
+    return () => {
+      if (refreshIntervalRef.current) {
+        console.log('Cleaning up location refresh interval');
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+    };
+  }, []);
+
   const handleRefreshLocations = async () => {
     if (!devicesData?.data || isRefreshing) return;
     
     setIsRefreshing(true);
+    console.log('Refreshing device locations at', new Date().toLocaleTimeString());
     
     try {
       // Request location updates for all devices

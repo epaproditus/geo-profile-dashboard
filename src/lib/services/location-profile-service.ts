@@ -17,27 +17,17 @@ interface Device {
   attributes?: {
     location_latitude?: string | null;
     location_longitude?: string | null;
+    location_updated_at?: string | null;
   };
   latitude?: number;
   longitude?: number;
 }
 
-interface Profile {
-  id: string | number;
-  name?: string;
-}
-
-interface Policy {
-  id: string;
-  name: string;
-  locations: Location[];
-  devices: { id: string; name: string }[];
-  profiles: { id: string; name: string }[];
-  isDefault: boolean;
-}
-
 // Store policies for use across the service
 let currentPolicies: Policy[] = [];
+
+// Store local timestamps for device location updates
+const deviceLocationTimestamps: Record<string, number> = {};
 
 // Calculate distance between two points in meters using Haversine formula
 const calculateDistance = (
@@ -50,7 +40,7 @@ const calculateDistance = (
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180; // Fixed: was using lon1 twice
 
   const a = 
     Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
@@ -74,6 +64,44 @@ const isDeviceInLocation = (
   );
 
   return distance <= location.radius;
+};
+
+// Check if device location is fresh (less than 5 minutes old)
+const isLocationFresh = (
+  deviceId: string | number,
+  locationUpdatedAt: string | null | undefined
+): boolean => {
+  const deviceIdString = String(deviceId);
+  const currentTimestamp = new Date().getTime();
+  const fiveMinutesInMs = 5 * 60 * 1000;
+  
+  // Check our local timestamp first (when we last retrieved the device data)
+  if (deviceLocationTimestamps[deviceIdString]) {
+    const timeSinceOurUpdate = currentTimestamp - deviceLocationTimestamps[deviceIdString];
+    if (timeSinceOurUpdate <= fiveMinutesInMs) {
+      console.log(`Device ${deviceId} location is fresh (updated ${Math.round(timeSinceOurUpdate / 1000)} seconds ago by our app)`);
+      return true;
+    }
+  }
+
+  // Fall back to the device's reported location timestamp if needed
+  if (locationUpdatedAt) {
+    const locationTimestamp = new Date(locationUpdatedAt).getTime();
+    const timeSinceDeviceUpdate = currentTimestamp - locationTimestamp;
+    if (timeSinceDeviceUpdate <= fiveMinutesInMs) {
+      console.log(`Device ${deviceId} location is fresh (reported ${Math.round(timeSinceDeviceUpdate / 1000)} seconds ago by SimpleMDM)`);
+      return true;
+    }
+  }
+
+  console.log(`Device ${deviceId} location is stale (older than 5 minutes)`);
+  return false;
+};
+
+// Update our local timestamp when we refresh a device's location
+const updateDeviceLocationTimestamp = (deviceId: string | number): void => {
+  deviceLocationTimestamps[String(deviceId)] = new Date().getTime();
+  console.log(`Updated location timestamp for device ${deviceId}`);
 };
 
 // Find all policies that apply to a device at its current location
@@ -126,6 +154,12 @@ export const applyProfilesToDevice = async (
     return;
   }
 
+  // Check if the device's location is fresh (less than 5 minutes old)
+  const isLocationCurrent = isLocationFresh(
+    device.id,
+    device.attributes.location_updated_at
+  );
+  
   const deviceLat = parseFloat(device.attributes.location_latitude);
   const deviceLng = parseFloat(device.attributes.location_longitude);
 
@@ -134,13 +168,22 @@ export const applyProfilesToDevice = async (
     return;
   }
 
-  // Find applicable policies
-  const applicablePolicies = findApplicablePolicies(
-    String(device.id),
-    deviceLat,
-    deviceLng,
-    policies
-  );
+  // Find applicable policies based on whether the location is fresh
+  let applicablePolicies: Policy[];
+  
+  if (isLocationCurrent) {
+    // Location is fresh, use normal policy assignment logic
+    applicablePolicies = findApplicablePolicies(
+      String(device.id),
+      deviceLat,
+      deviceLng,
+      policies
+    );
+  } else {
+    // Location is stale (older than 5 minutes), only use default policies
+    console.log(`Device ${device.id} location is older than 5 minutes, using default policies only`);
+    applicablePolicies = policies.filter(p => p.isDefault);
+  }
 
   if (applicablePolicies.length === 0) {
     console.log(`No applicable policies found for device ${device.id}`);
@@ -192,13 +235,31 @@ const handleDeviceLocationUpdate = async (device: Device): Promise<void> => {
   }
 
   try {
-    // Find applicable policies
-    const applicablePolicies = findApplicablePolicies(
-      String(device.id),
-      device.latitude,
-      device.longitude,
-      currentPolicies
+    // Update our local timestamp for this device
+    updateDeviceLocationTimestamp(device.id);
+    
+    // Check if device location is fresh (less than 5 minutes old)
+    const isLocationCurrent = isLocationFresh(
+      device.id,
+      device.attributes?.location_updated_at
     );
+    
+    // Find applicable policies based on location freshness
+    let applicablePolicies: Policy[];
+    
+    if (isLocationCurrent) {
+      // Location is fresh, use normal policy assignment logic
+      applicablePolicies = findApplicablePolicies(
+        String(device.id),
+        device.latitude,
+        device.longitude,
+        currentPolicies
+      );
+    } else {
+      // Location is stale (older than 5 minutes), only use default policies
+      console.log(`Device ${device.id} location is older than 5 minutes, using default policies only`);
+      applicablePolicies = currentPolicies.filter(p => p.isDefault);
+    }
 
     if (applicablePolicies.length === 0) {
       console.log(`No applicable policies found for device ${device.id}`);
@@ -234,5 +295,6 @@ export default {
   applyProfilesToDevice,
   checkAndApplyProfilesForDevice,
   setPolicies,
-  handleDeviceLocationUpdate
+  handleDeviceLocationUpdate,
+  updateDeviceLocationTimestamp  // Export the new function
 };

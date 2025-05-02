@@ -369,9 +369,11 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
                           </div>
                           
                           <div>
-                            <p className="text-muted-foreground text-xs">Serial Number</p>
-                            <p>
-                              {deviceIndex === 0 ? "MQ12WXYJ6J" : "FQH6PJGFHK"}
+                            <p className="text-muted-foreground text-xs">Policy Status</p>
+                            <p className="flex items-center">
+                              <span className={`px-2 py-1 rounded-full text-xs ${policy.isDefault ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"}`}>
+                                {policy.isDefault ? "Default Policy" : "Location-based Policy"}
+                              </span>
                             </p>
                           </div>
                         </div>
@@ -418,6 +420,22 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
                       
                       {deviceIndex === 0 && (
                         <div className="mt-3 pt-3 border-t">
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground text-xs">Phone Number</p>
+                              <p>+1 (956) 329-4317</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground text-xs">Carrier</p>
+                              <p>Visible</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Location info for the first device with coordinates */}
+                      {deviceIndex === 0 && (
+                        <div className="mt-3 pt-3 border-t">
                           <div className="flex items-center gap-2 mb-2">
                             <MapPin className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm font-medium">Last Known Location</span>
@@ -427,6 +445,27 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
                           </div>
                           <div className="text-xs text-muted-foreground">
                             26.30169°, -98.18092° (Accuracy: 26m)
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            <span className="font-medium">Policy Assignment: </span>
+                            Based on current location
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* For iPad without location - add policy assignment info */}
+                      {deviceIndex === 1 && (
+                        <div className="mt-3 pt-3 border-t">
+                          <div className="flex items-center gap-2 mb-2">
+                            <MapPin className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">Device Location</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            No location data available
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            <span className="font-medium">Policy Assignment: </span>
+                            {policy.isDefault ? "Using default policy (no location data)" : "Manually assigned to this policy"}
                           </div>
                         </div>
                       )}
@@ -1367,23 +1406,48 @@ const Geofences = () => {
                               }
                             />
                             
-                            {/* Delete location button - only show if there's more than one location */}
-                            {editingPolicy.locations.length > 1 && (
+                            {/* Delete location button - only show if there's more than one location OR if it's the default policy */}
+                            {(editingPolicy.locations.length > 1 || editingPolicy.isDefault) && (
                               <Button
                                 variant="destructive"
                                 size="sm"
                                 className="absolute top-0 right-0"
                                 onClick={() => {
-                                  setEditingPolicy(prev => {
-                                    if (!prev) return null;
-                                    const newLocations = [...prev.locations];
-                                    newLocations.splice(index, 1);
-                                    return {...prev, locations: newLocations};
-                                  });
+                                  if (editingPolicy.isDefault) {
+                                    // For default policy, we'll just reset the location to an empty array
+                                    // which means it will apply globally without location restrictions
+                                    setEditingPolicy(prev => {
+                                      if (!prev) return null;
+                                      return {
+                                        ...prev,
+                                        locations: []
+                                      };
+                                    });
+                                    
+                                    toast({
+                                      title: "Default Policy Updated",
+                                      description: "The default policy will now apply globally without location restrictions.",
+                                    });
+                                  } else if (editingPolicy.locations.length > 1) {
+                                    // Normal deletion for non-default policies with multiple locations
+                                    setEditingPolicy(prev => {
+                                      if (!prev) return null;
+                                      const newLocations = [...prev.locations];
+                                      newLocations.splice(index, 1);
+                                      return {...prev, locations: newLocations};
+                                    });
+                                  } else {
+                                    // Warn user that at least one location is required for non-default policies
+                                    toast({
+                                      title: "Location Required",
+                                      description: "Non-default policies must have at least one location.",
+                                      variant: "destructive"
+                                    });
+                                  }
                                 }}
                               >
                                 <Trash className="h-4 w-4 mr-2" />
-                                Remove Location
+                                {editingPolicy.isDefault ? "Remove Location Restriction" : "Remove Location"}
                               </Button>
                             )}
                           </TabsContent>

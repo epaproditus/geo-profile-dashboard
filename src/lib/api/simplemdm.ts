@@ -1,4 +1,5 @@
 import axios from 'axios';
+import locationProfileService from '../services/location-profile-service';
 
 // API Configuration
 const BASE_URL = import.meta.env.PROD 
@@ -219,6 +220,14 @@ export const simplemdmApi = {
   async getDevices(params?: { limit?: number; starting_after?: string; direction?: 'asc' | 'desc' }) {
     try {
       const response = await apiClient.get<SimpleMDMListResponse<SimpleMDMDevice>>('/devices', { params });
+      
+      // Update timestamp for each device we receive
+      if (response.data.data && Array.isArray(response.data.data)) {
+        response.data.data.forEach(device => {
+          locationProfileService.updateDeviceLocationTimestamp(device.id);
+        });
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Error fetching devices:', error);
@@ -230,6 +239,10 @@ export const simplemdmApi = {
   async getDevice(deviceId: number | string) {
     try {
       const response = await apiClient.get<SimpleMDMResponse<SimpleMDMDevice>>(`/devices/${deviceId}`);
+      
+      // Update timestamp for this device
+      locationProfileService.updateDeviceLocationTimestamp(deviceId);
+      
       return response.data;
     } catch (error) {
       console.error(`Error fetching device ${deviceId}:`, error);
@@ -237,10 +250,15 @@ export const simplemdmApi = {
     }
   },
 
-  // Request device location update
+  // Request device location update using the general devices endpoint
   async updateDeviceLocation(deviceId: number | string) {
     try {
-      const response = await apiClient.post(`/devices/${deviceId}/lost_mode/update_location`);
+      // Use the general device endpoint instead of lost mode
+      const response = await apiClient.get<SimpleMDMResponse<SimpleMDMDevice>>(`/devices/${deviceId}`);
+      
+      // Update timestamp for this device when we explicitly request a location update
+      locationProfileService.updateDeviceLocationTimestamp(deviceId);
+      
       return response.data;
     } catch (error) {
       console.error(`Error updating location for device ${deviceId}:`, error);
