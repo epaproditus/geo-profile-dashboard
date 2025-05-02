@@ -91,6 +91,11 @@ const DeviceMap = ({ policies = [] }: DeviceMapProps) => {
       
       await Promise.all(updatePromises);
       
+      // Update our local timestamps for each device location
+      devicesData.data.forEach(device => {
+        locationProfileService.updateDeviceLocationTimestamp(device.id);
+      });
+      
       // Wait a moment for the updates to process
       setTimeout(() => {
         refetch();
