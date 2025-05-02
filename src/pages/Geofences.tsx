@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import PolicyLocationSearch from '@/components/geofences/PolicyLocationSearch';
 import DeviceSelector from '@/components/geofences/DeviceSelector';
+import ProfileSelector from '@/components/geofences/ProfileSelector';
 
 // Type for geofence objects
 interface Geofence {
@@ -52,6 +53,10 @@ interface ZonePolicy {
     id: string;
     name: string;
   }[];
+  profiles: {
+    id: string;
+    name: string;
+  }[];
 }
 
 // LocalStorage helper functions
@@ -77,9 +82,23 @@ const defaultPolicies: ZonePolicy[] = [
         geofenceId: "default-geofence"
       }
     ],
-    devices: [] // Empty array of devices by default
+    devices: [], // Empty array of devices by default
+    profiles: [] // Empty array of profiles by default
   }
 ];
+
+// Default policy structure 
+const DEFAULT_POLICY = {
+  id: '',
+  name: '',
+  description: '',
+  isActive: true,
+  isDefault: false,
+  priority: 0,
+  locations: [],
+  devices: [],
+  profiles: [],  // Added profiles array
+};
 
 // Save geofences to localStorage
 const saveGeofencesToLocalStorage = (geofences: Geofence[]) => {
@@ -133,7 +152,8 @@ const loadPoliciesFromLocalStorage = (): ZonePolicy[] => {
             isDefault: policy.isDefault,
             // Convert single location to locations array
             locations: [policy.location],
-            devices: policy.devices || []
+            devices: policy.devices || [],
+            profiles: policy.profiles || []
           };
           return cleanedPolicy;
         }
@@ -199,7 +219,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
   const policyGeofences = geofences.filter(geofence => geofence.zonePolicyId === policy.id);
   
   return (
-    <Card className={policy.isDefault ? "border-primary" : undefined}>
+    <Card className={policy.isDefault ? "border-primary h-full" : "h-full"}>
       <CardHeader className="pb-3">
         <div className="flex justify-between items-start">
           <div>
@@ -210,93 +230,360 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
               </Badge>
             )}
           </div>
-          <Badge variant="secondary">
-            {policy.locations.length} location{policy.locations.length !== 1 ? 's' : ''}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {policy.profiles.length > 0 && (
+              <Badge variant="outline" className="bg-primary/10 border-primary/10">
+                {policy.profiles.length} profile{policy.profiles.length !== 1 ? 's' : ''}
+              </Badge>
+            )}
+            {policy.devices.length > 0 && (
+              <Badge variant="outline" className="bg-secondary border-secondary/10">
+                {policy.devices.length} device{policy.devices.length !== 1 ? 's' : ''}
+              </Badge>
+            )}
+            <Badge variant="secondary">
+              {policy.locations.length} location{policy.locations.length !== 1 ? 's' : ''}
+            </Badge>
+          </div>
         </div>
         <CardDescription>{policy.description}</CardDescription>
       </CardHeader>
       
-      <CardContent>
-        <div className="space-y-4">
-          {/* Display all locations for the policy with maps on the right side */}
-          {policy.locations.map((location, index) => (
-            <div key={index} className="border rounded-lg overflow-hidden bg-secondary/5">
-              {/* Flex container for side-by-side layout */}
-              <div className="flex flex-col md:flex-row">
-                {/* Location information on the left */}
-                <div className="p-4 flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-medium">
-                      Location {policy.locations.length > 1 ? index + 1 : ''}
-                    </span>
-                    {policy.isDefault && index === 0 && (
-                      <Badge variant="outline" className="text-xs">
-                        Fallback Policy
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="text-sm space-y-1">
-                    <p>{location.displayName}</p>
-                    <p className="text-muted-foreground">
-                      {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
-                    </p>
-                    <p className="text-muted-foreground">
-                      Radius: {location.radius}m
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Map on the right */}
-                <div className="md:w-2/3 h-[180px] md:h-auto">
-                  <Map
-                    geofences={[{
-                      id: location.geofenceId,
-                      name: location.displayName,
-                      latitude: location.latitude,
-                      longitude: location.longitude,
-                      radius: location.radius,
-                      profileId: null,
-                      zonePolicyId: null
-                    }]}
-                    center={[location.longitude, location.latitude]}
-                    zoom={13}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
+      <CardContent className="pb-0">
+        <Tabs defaultValue="locations" className="w-full">
+          <TabsList className="grid w-full" style={{ 
+            gridTemplateColumns: `repeat(${policy.profiles.length > 0 ? '3' : policy.devices.length > 0 ? '2' : '1'}, 1fr)` 
+          }}>
+            <TabsTrigger value="locations">
+              <MapPin className="h-4 w-4 mr-2" />
+              Locations ({policy.locations.length})
+            </TabsTrigger>
+            
+            {policy.devices.length > 0 && (
+              <TabsTrigger value="devices">
+                <Smartphone className="h-4 w-4 mr-2" />
+                Devices ({policy.devices.length})
+              </TabsTrigger>
+            )}
+            
+            {policy.profiles.length > 0 && (
+              <TabsTrigger value="profiles">
+                <Shield className="h-4 w-4 mr-2" />
+                Profiles ({policy.profiles.length})
+              </TabsTrigger>
+            )}
+          </TabsList>
           
-          {policy.isDefault && (
-            <p className="text-xs text-muted-foreground italic">
-              This policy will apply when a device is outside all other defined locations.
-            </p>
-          )}
-
-          {/* Display attached devices if any */}
-          {policy.devices.length > 0 && (
-            <div className="mt-4 border-t pt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Smartphone className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Attached Devices ({policy.devices.length})</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {policy.devices.map(device => (
-                  <div 
-                    key={device.id}
-                    className="bg-secondary text-secondary-foreground rounded-md px-2 py-1 text-xs flex items-center gap-1"
-                  >
-                    <span>{device.name}</span>
+          <TabsContent value="locations" className="pt-4">
+            <div className="space-y-4">
+              {policy.locations.map((location, index) => (
+                <div key={index} className="border rounded-lg overflow-hidden bg-secondary/5">
+                  <div className="flex flex-col md:flex-row">
+                    <div className="p-4 flex-1 md:w-1/2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium">
+                          Location {policy.locations.length > 1 ? index + 1 : ''}
+                        </span>
+                        {policy.isDefault && index === 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            Fallback Policy
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-sm space-y-1">
+                        <p>{location.displayName}</p>
+                        <p className="text-muted-foreground">
+                          {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Radius: {location.radius}m
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="md:w-1/2 h-[180px] md:h-auto">
+                      <Map
+                        geofences={[{
+                          id: location.geofenceId,
+                          name: location.displayName,
+                          latitude: location.latitude,
+                          longitude: location.longitude,
+                          radius: location.radius,
+                          profileId: null,
+                          zonePolicyId: null
+                        }]}
+                        center={[location.longitude, location.latitude]}
+                        zoom={13}
+                      />
+                    </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+              
+              {policy.isDefault && (
+                <p className="text-xs text-muted-foreground italic">
+                  This policy will apply when a device is outside all other defined locations.
+                </p>
+              )}
             </div>
-          )}
-        </div>
+          </TabsContent>
+          
+          <TabsContent value="devices" className="pt-4">
+            <div className="space-y-4">
+              {policy.devices.map((device, deviceIndex) => (
+                deviceIndex < 2 && (
+                  <div key={device.id} className="border rounded-lg overflow-hidden bg-secondary/5">
+                    <div className="flex flex-col p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Smartphone className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium">
+                          {device.name}
+                        </span>
+                        {deviceIndex === 0 && (
+                          <Badge variant="outline" className="ml-auto text-xs border-green-500 text-green-600">
+                            Online
+                          </Badge>
+                        )}
+                        {deviceIndex === 1 && (
+                          <Badge variant="outline" className="ml-auto text-xs border-orange-500 text-orange-600">
+                            Last seen 4 days ago
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm mt-2">
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-muted-foreground text-xs">Model</p>
+                            <p className="font-medium">
+                              {deviceIndex === 0 ? "iPhone 13 mini" : "iPad Pro (11-inch)"}
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <p className="text-muted-foreground text-xs">OS Version</p>
+                            <p>
+                              {deviceIndex === 0 ? "iOS 18.3.2" : "iOS 18.3"}
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <p className="text-muted-foreground text-xs">Serial Number</p>
+                            <p>
+                              {deviceIndex === 0 ? "MQ12WXYJ6J" : "FQH6PJGFHK"}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-muted-foreground text-xs">Status</p>
+                            <p>
+                              <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                Supervised
+                              </span>
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <p className="text-muted-foreground text-xs">Battery</p>
+                            <div className="flex items-center gap-2">
+                              {deviceIndex === 0 ? (
+                                <>
+                                  <div className="h-2 w-24 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div className="h-full bg-green-500 rounded-full" style={{ width: "33%" }}></div>
+                                  </div>
+                                  <span>33%</span>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="h-2 w-24 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div className="h-full bg-red-500 rounded-full" style={{ width: "1%" }}></div>
+                                  </div>
+                                  <span className="text-red-500">1%</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <p className="text-muted-foreground text-xs">Storage</p>
+                            <p>
+                              {deviceIndex === 0 ? "42.9 GB free of 128 GB" : "60.4 GB free of 128 GB"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {deviceIndex === 0 && (
+                        <div className="mt-3 pt-3 border-t">
+                          <div className="flex items-center gap-2 mb-2">
+                            <MapPin className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">Last Known Location</span>
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              Updated 1 day ago
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            26.30169°, -98.18092° (Accuracy: 26m)
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              ))}
+              
+              {policy.devices.length > 2 && (
+                <div className="border rounded-lg overflow-hidden bg-secondary/5">
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Smartphone className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">
+                        Additional Devices
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {policy.devices.slice(2).map(device => (
+                        <div 
+                          key={device.id}
+                          className="bg-secondary text-secondary-foreground rounded-md px-3 py-2.5 text-sm flex items-center gap-1.5"
+                        >
+                          <Smartphone className="h-4 w-4" />
+                          <span>{device.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {policy.devices.length === 0 && (
+                <div className="border rounded-lg overflow-hidden bg-secondary/5">
+                  <div className="flex flex-col items-center justify-center h-[180px] text-muted-foreground p-4">
+                    <Smartphone className="h-12 w-12 mb-2 opacity-20" />
+                    <p>No devices assigned to this policy</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="profiles" className="pt-4">
+            <div className="space-y-4">
+              {policy.profiles.map((profile, profileIndex) => (
+                profileIndex < 2 && (
+                  <div key={profile.id} className="border rounded-lg overflow-hidden bg-secondary/5">
+                    <div className="flex flex-col p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium">
+                          {profile.name}
+                        </span>
+                        <Badge variant="outline" className="ml-auto text-xs">
+                          {profileIndex === 0 ? "Configuration" : "Restriction"}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 text-sm mt-2">
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-muted-foreground text-xs">Profile Type</p>
+                            <p className="font-medium">
+                              {profileIndex === 0 ? "WiFi Configuration" : "App Restrictions"}
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <p className="text-muted-foreground text-xs">Description</p>
+                            <p>
+                              {profileIndex === 0 
+                                ? "Automatically connects to corporate WiFi networks" 
+                                : "Restricts access to certain applications when in this location"}
+                            </p>
+                          </div>
+                          
+                          <div className="pt-2">
+                            <p className="text-muted-foreground text-xs">Settings</p>
+                            <div className="mt-2 grid grid-cols-1 gap-2">
+                              {profileIndex === 0 ? (
+                                <>
+                                  <div className="flex items-center justify-between bg-secondary/20 px-3 py-2 rounded-md">
+                                    <span>SSID</span>
+                                    <span className="font-medium">Corporate-{policy.name.split(' ')[0]}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between bg-secondary/20 px-3 py-2 rounded-md">
+                                    <span>Security Type</span>
+                                    <span className="font-medium">WPA2 Enterprise</span>
+                                  </div>
+                                  <div className="flex items-center justify-between bg-secondary/20 px-3 py-2 rounded-md">
+                                    <span>Auto-Join</span>
+                                    <span className="font-medium">Enabled</span>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between bg-secondary/20 px-3 py-2 rounded-md">
+                                    <span>Social Media Apps</span>
+                                    <span className="font-medium text-red-500">Blocked</span>
+                                  </div>
+                                  <div className="flex items-center justify-between bg-secondary/20 px-3 py-2 rounded-md">
+                                    <span>Camera Access</span>
+                                    <span className="font-medium text-amber-500">Limited</span>
+                                  </div>
+                                  <div className="flex items-center justify-between bg-secondary/20 px-3 py-2 rounded-md">
+                                    <span>Corporate Apps</span>
+                                    <span className="font-medium text-green-500">Allowed</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ))}
+              
+              {policy.profiles.length > 2 && (
+                <div className="border rounded-lg overflow-hidden bg-secondary/5">
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">
+                        Additional Profiles
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {policy.profiles.slice(2).map(profile => (
+                        <div 
+                          key={profile.id}
+                          className="bg-primary/10 text-primary rounded-md px-3 py-2.5 text-sm flex items-center gap-1.5"
+                        >
+                          <Shield className="h-4 w-4" />
+                          <span>{profile.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {policy.profiles.length === 0 && (
+                <div className="border rounded-lg overflow-hidden bg-secondary/5">
+                  <div className="flex flex-col items-center justify-center h-[250px] text-muted-foreground p-4">
+                    <Shield className="h-12 w-12 mb-2 opacity-20" />
+                    <p>No profiles assigned to this policy</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </CardContent>
       
-      <CardFooter className="flex gap-2">
+      <CardFooter className="flex gap-2 mt-4">
         <Button 
           variant="outline" 
           className="flex-1"
@@ -377,6 +664,10 @@ const Geofences = () => {
     id: string;
     name: string;
   }[]>([]);
+  const [newPolicyProfiles, setNewPolicyProfiles] = useState<{
+    id: string;
+    name: string;
+  }[]>([]);
   
   const { toast } = useToast();
 
@@ -395,7 +686,9 @@ const Geofences = () => {
           ? policy.locations 
           : policy.location 
             ? [policy.location] 
-            : []
+            : [],
+        // Ensure profiles exists
+        profiles: policy.profiles || []
       }));
       
       // Only update if there's a difference
@@ -619,7 +912,8 @@ const Geofences = () => {
             geofenceId: `geo-${Date.now()}` // Generate a unique ID for the location
           }
         ],
-        devices: newPolicyDevices // Include the selected devices
+        devices: newPolicyDevices, // Include the selected devices
+        profiles: newPolicyProfiles // Include the selected profiles
       };
       
       const updatedPolicies = [...policies, newPolicy];
@@ -630,6 +924,7 @@ const Geofences = () => {
       setNewPolicyDescription('');
       setNewPolicyLocation(null);
       setNewPolicyDevices([]); // Reset selected devices
+      setNewPolicyProfiles([]); // Reset selected profiles
       setIsNewPolicyDialogOpen(false);
       
       toast({
@@ -866,7 +1161,7 @@ const Geofences = () => {
 
       {/* New Policy Dialog */}
       <Dialog open={isNewPolicyDialogOpen} onOpenChange={setIsNewPolicyDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create New Policy</DialogTitle>
             <DialogDescription>
@@ -898,7 +1193,7 @@ const Geofences = () => {
             <Separator className="my-4" />
             
             <Tabs defaultValue="locations" className="w-full mt-4">
-              <TabsList className="grid grid-cols-2">
+              <TabsList className="grid grid-cols-3">
                 <TabsTrigger value="locations">
                   <MapPin className="h-4 w-4 mr-2" />
                   Locations
@@ -906,6 +1201,10 @@ const Geofences = () => {
                 <TabsTrigger value="devices">
                   <Smartphone className="h-4 w-4 mr-2" />
                   Devices
+                </TabsTrigger>
+                <TabsTrigger value="profiles">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Profiles
                 </TabsTrigger>
               </TabsList>
               
@@ -923,10 +1222,19 @@ const Geofences = () => {
                   />
                 </div>
               </TabsContent>
+              
+              <TabsContent value="profiles" className="pt-4">
+                <div className="space-y-4">
+                  <ProfileSelector
+                    selectedProfiles={newPolicyProfiles}
+                    onProfilesChange={setNewPolicyProfiles}
+                  />
+                </div>
+              </TabsContent>
             </Tabs>
           </div>
           
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 pt-4 bg-background mt-4">
             <Button variant="outline" onClick={() => setIsNewPolicyDialogOpen(false)}>
               Cancel
             </Button>
@@ -942,7 +1250,7 @@ const Geofences = () => {
 
       {/* Edit Policy Dialog */}
       <Dialog open={isEditPolicyDialogOpen} onOpenChange={setIsEditPolicyDialogOpen}>
-        <DialogContent className="sm:max-w-[650px]">
+        <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Policy</DialogTitle>
             <DialogDescription>
@@ -1018,7 +1326,7 @@ const Geofences = () => {
                 )}
                 
                 <Tabs defaultValue="locations" className="w-full mt-4">
-                  <TabsList className="grid grid-cols-2">
+                  <TabsList className="grid grid-cols-3">
                     <TabsTrigger value="locations">
                       <MapPin className="h-4 w-4 mr-2" />
                       Locations
@@ -1026,6 +1334,10 @@ const Geofences = () => {
                     <TabsTrigger value="devices">
                       <Smartphone className="h-4 w-4 mr-2" />
                       Devices
+                    </TabsTrigger>
+                    <TabsTrigger value="profiles">
+                      <Shield className="h-4 w-4 mr-2" />
+                      Profiles
                     </TabsTrigger>
                   </TabsList>
                   
@@ -1092,12 +1404,25 @@ const Geofences = () => {
                       />
                     </div>
                   </TabsContent>
+                  
+                  <TabsContent value="profiles" className="pt-4">
+                    <div className="space-y-4">
+                      <ProfileSelector
+                        selectedProfiles={editingPolicy?.profiles || []}
+                        onProfilesChange={(profiles) => 
+                          setEditingPolicy(prev => 
+                            prev ? {...prev, profiles} : null
+                          )
+                        }
+                      />
+                    </div>
+                  </TabsContent>
                 </Tabs>
               </div>
             )}
           </div>
           
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 pt-4 bg-background mt-4">
             <Button variant="outline" onClick={() => setIsEditPolicyDialogOpen(false)}>
               Cancel
             </Button>
@@ -1115,3 +1440,172 @@ const Geofences = () => {
 };
 
 export default Geofences;
+
+// New Policy Dialog Component
+const NewPolicyDialog = ({ 
+  open, 
+  onOpenChange, 
+  onCreatePolicy, 
+  geofences, 
+  allDevices 
+}: NewPolicyDialogProps) => {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState(1);
+  const [isDefault, setIsDefault] = useState(false);
+  const [selectedLocations, setSelectedLocations] = useState<{ id: string; name: string, latitude: number, longitude: number, radius: number }[]>([]);
+  const [selectedDevices, setSelectedDevices] = useState<{ id: string; name: string }[]>([]);
+  const [selectedProfiles, setSelectedProfiles] = useState<{ id: string; name: string }[]>([]);
+  const [currentTab, setCurrentTab] = useState("general");
+  
+  const handleCreatePolicy = () => {
+    onCreatePolicy({
+      id: uuidv4(),
+      name,
+      description,
+      isActive: true,
+      isDefault,
+      priority,
+      locations: selectedLocations.map(location => ({
+        id: location.id,
+        name: location.name,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        radius: location.radius,
+      })),
+      devices: selectedDevices,
+      profiles: selectedProfiles, // Include selected profiles in the policy
+    });
+    
+    // Reset form fields
+    setName("");
+    setDescription("");
+    setPriority(1);
+    setIsDefault(false);
+    setSelectedLocations([]);
+    setSelectedDevices([]);
+    setSelectedProfiles([]);
+    setCurrentTab("general");
+    
+    // Close dialog
+    onOpenChange(false);
+  };
+  
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[700px]">
+        <DialogHeader>
+          <DialogTitle>Create New Policy</DialogTitle>
+          <DialogDescription>
+            Define a new location-based policy for your mobile devices.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <Tabs value={currentTab} onValueChange={setCurrentTab}>
+          <TabsList className="grid grid-cols-4 mb-4">
+            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="locations">Locations</TabsTrigger>
+            <TabsTrigger value="devices">Devices</TabsTrigger>
+            <TabsTrigger value="profiles">Profiles</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="general" className="space-y-4">
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Policy Name</Label>
+                <Input 
+                  id="name" 
+                  value={name} 
+                  onChange={e => setName(e.target.value)} 
+                  placeholder="Enter policy name"
+                />
+              </div>
+              
+              <div className="grid gap-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea 
+                  id="description" 
+                  value={description} 
+                  onChange={e => setDescription(e.target.value)}
+                  placeholder="Enter policy description"
+                />
+              </div>
+              
+              <div className="grid gap-2">
+                <Label htmlFor="priority">Priority (1-10)</Label>
+                <Input 
+                  id="priority" 
+                  type="number" 
+                  min={1} 
+                  max={10} 
+                  value={priority}
+                  onChange={e => setPriority(parseInt(e.target.value))}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Higher priority policies are applied first when multiple policies match.
+                </p>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="is-default" 
+                  checked={isDefault}
+                  onCheckedChange={(checked) => setIsDefault(!!checked)}
+                />
+                <Label htmlFor="is-default">Default Policy</Label>
+              </div>
+              <p className="text-sm text-muted-foreground -mt-2">
+                Default policies are applied when no other policies match a device's location.
+              </p>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="locations" className="space-y-4">
+            <PolicyLocationSearch 
+              geofences={geofences}
+              selectedLocations={selectedLocations}
+              onChange={setSelectedLocations}
+              disabled={isDefault}
+            />
+            
+            {isDefault && (
+              <p className="text-sm text-amber-500">
+                Default policies apply regardless of location and don't require location selection.
+              </p>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="devices" className="space-y-4">
+            <DeviceSelector
+              availableDevices={allDevices}
+              selectedDevices={selectedDevices}
+              onDevicesChange={setSelectedDevices}
+            />
+          </TabsContent>
+          
+          <TabsContent value="profiles" className="space-y-4">
+            <ProfileSelector
+              selectedProfiles={selectedProfiles}
+              onProfilesChange={setSelectedProfiles}
+            />
+          </TabsContent>
+        </Tabs>
+        
+        <DialogFooter>
+          <Button 
+            variant="outline" 
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleCreatePolicy}
+            disabled={!name.trim()}
+          >
+            Create Policy
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};

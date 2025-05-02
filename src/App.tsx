@@ -12,6 +12,7 @@ import Profiles from "./pages/Profiles";
 import NotFound from "./pages/NotFound";
 import SimpleMDMTest from "./pages/SimpleMDMTest";
 import AppCatalog from "./pages/AppCatalog";
+import TestCardLayout from "./pages/TestCardLayout";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/profiles" element={<Profiles />} />
           <Route path="/app-catalog" element={<AppCatalog />} />
           <Route path="/simplemdm-test" element={<SimpleMDMTest />} />
+          <Route path="/test-cards" element={<TestCardLayout />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
