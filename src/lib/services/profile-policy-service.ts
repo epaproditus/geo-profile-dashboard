@@ -259,13 +259,15 @@ const profilePolicyService = {
 
   /**
    * Process a device that has connected to the network
-   * Determines the appropriate policy and pushes profiles if needed
+   * Determines the appropriate policy and pushes/removes profiles if needed
    * Using IP-based detection only, without GPS location
    */
   async processDeviceConnection(deviceId: string, deviceIp: string | null): Promise<{
     policyApplied: boolean;
     policyName: string | null;
     profilesPushed: number;
+    profilesRemoved: number;
+    removedProfiles: string[];
   }> {
     console.log(`Processing device ${deviceId} connection from IP: ${deviceIp || 'unknown'}`);
     
@@ -274,21 +276,55 @@ const profilePolicyService = {
     
     if (!activePolicy) {
       console.log(`No applicable policy found for device ${deviceId}`);
-      return { policyApplied: false, policyName: null, profilesPushed: 0 };
+      return { 
+        policyApplied: false, 
+        policyName: null, 
+        profilesPushed: 0,
+        profilesRemoved: 0,
+        removedProfiles: []
+      };
     }
     
     console.log(`Determined policy "${activePolicy.name}" for device ${deviceId}`);
     
-    // Get profile IDs from the policy
+    // Get last applied policy information
+    const lastAppliedPolicy = this.getLastAppliedPolicy(deviceId);
+    const oldPolicyId = lastAppliedPolicy ? lastAppliedPolicy.policyId : null;
+    
+    // Check if we need to handle a policy transition (device moved to a different policy)
+    let profilesRemoved = 0;
+    let removedProfiles: string[] = [];
+    
+    if (oldPolicyId && oldPolicyId !== activePolicy.id) {
+      console.log(`Device ${deviceId} has changed policies from ${oldPolicyId} to ${activePolicy.id}`);
+      console.log(`Cleaning up profiles from previous policy`);
+      
+      // Handle policy transition - remove profiles from the old policy
+      const transitionResult = await this.handlePolicyTransition(
+        deviceId, 
+        oldPolicyId, 
+        activePolicy.id
+      );
+      
+      profilesRemoved = transitionResult.profilesRemoved;
+      removedProfiles = transitionResult.removedProfiles;
+      
+      console.log(`Removed ${profilesRemoved} profiles from previous policy`);
+    }
+    
+    // Get profile IDs from the active policy
     const profileIds = activePolicy.profiles.map(p => p.id);
     
     // Check if this policy was recently applied to avoid duplicate pushes
-    if (this.wasPolicyRecentlyApplied(deviceId, activePolicy.id, profileIds)) {
+    // Only skip if no profiles were removed (which would indicate a policy change)
+    if (profilesRemoved === 0 && this.wasPolicyRecentlyApplied(deviceId, activePolicy.id, profileIds)) {
       console.log(`Policy "${activePolicy.name}" was recently applied to device ${deviceId}, skipping`);
       return { 
         policyApplied: false, 
         policyName: activePolicy.name, 
-        profilesPushed: 0 
+        profilesPushed: 0,
+        profilesRemoved,
+        removedProfiles
       };
     }
     
@@ -301,7 +337,9 @@ const profilePolicyService = {
     return {
       policyApplied: pushedProfileIds.length > 0,
       policyName: activePolicy.name,
-      profilesPushed: pushedProfileIds.length
+      profilesPushed: pushedProfileIds.length,
+      profilesRemoved,
+      removedProfiles
     };
   },
   
@@ -335,7 +373,115 @@ const profilePolicyService = {
       profilesPushed: pushedProfileIds.length,
       policyName: policy.name
     };
-  }
+  },
+
+  /**
+   * Get the last policy that was applied to a device
+   */
+  getLastAppliedPolicy(deviceId: string): { policyId: string; profileIds: string[] } | null {
+    const history = this.loadDevicePolicyHistory();
+    
+    // Find all entries for this device
+    const deviceEntries = history.filter(entry => entry.deviceId === deviceId);
+    
+    if (deviceEntries.length === 0) {
+      console.log(`No policy history found for device ${deviceId}`);
+      return null;
+    }
+    
+    // Sort by date (newest first)
+    deviceEntries.sort((a, b) => {
+      return new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime();
+    });
+    
+    // Return the most recent policy
+    return {
+      policyId: deviceEntries[0].policyId,
+      profileIds: deviceEntries[0].profileIds
+    };
+  },
+
+  /**
+   * Remove profiles from a device that are associated with a specific policy
+   */
+  async removeProfilesFromDevice(policy: ZonePolicy, deviceId: string): Promise<{
+    removed: number;
+    failed: number;
+    profileNames: string[];
+  }> {
+    if (!policy.profiles || policy.profiles.length === 0) {
+      console.log(`No profiles to remove for policy "${policy.name}"`);
+      return { removed: 0, failed: 0, profileNames: [] };
+    }
+    
+    console.log(`Removing ${policy.profiles.length} profiles from policy "${policy.name}" from device ${deviceId}`);
+    console.log(`Profiles to remove: ${policy.profiles.map(p => `"${p.name}" (${p.id})`).join(', ')}`);
+    
+    let removed = 0;
+    let failed = 0;
+    const removedProfileNames: string[] = [];
+    
+    for (const profile of policy.profiles) {
+      try {
+        console.log(`Removing profile "${profile.name}" (ID: ${profile.id}) from device ${deviceId}`);
+        
+        // First check if profile is actually installed
+        try {
+          const isInstalled = await simplemdmApi.isProfileInstalledOnDevice(profile.id, deviceId);
+          if (!isInstalled) {
+            console.log(`Profile "${profile.name}" is not installed, skipping removal`);
+            continue;
+          }
+        } catch (checkError) {
+          console.error(`Error checking if profile is installed:`, checkError);
+          // Continue with removal attempt even if check fails
+        }
+        
+        // Remove the profile via SimpleMDM API
+        await simplemdmApi.removeProfileFromDevice(profile.id, deviceId);
+        
+        removed++;
+        removedProfileNames.push(profile.name);
+        console.log(`Profile "${profile.name}" removed successfully`);
+      } catch (error) {
+        failed++;
+        console.error(`Failed to remove profile "${profile.name}":`, error);
+      }
+    }
+    
+    return { removed, failed, profileNames: removedProfileNames };
+  },
+
+  /**
+   * Handle device policy transition - removes old policy profiles if needed
+   */
+  async handlePolicyTransition(deviceId: string, oldPolicyId: string | null, newPolicyId: string): Promise<{
+    profilesRemoved: number;
+    removedProfiles: string[];
+  }> {
+    // If no policy change, no need to remove profiles
+    if (oldPolicyId === newPolicyId) {
+      return { profilesRemoved: 0, removedProfiles: [] };
+    }
+    
+    // Get the old policy
+    const policies = this.loadPolicies();
+    const oldPolicy = oldPolicyId ? policies.find(p => p.id === oldPolicyId) : null;
+    
+    if (!oldPolicy) {
+      console.log(`No previous policy to clean up for device ${deviceId}`);
+      return { profilesRemoved: 0, removedProfiles: [] };
+    }
+    
+    // Remove profiles from the old policy
+    console.log(`Cleaning up profiles from previous policy "${oldPolicy.name}" for device ${deviceId}`);
+    const removalResult = await this.removeProfilesFromDevice(oldPolicy, deviceId);
+    
+    return { 
+      profilesRemoved: removalResult.removed,
+      removedProfiles: removalResult.profileNames
+    };
+  },
 };
 
 export default profilePolicyService;

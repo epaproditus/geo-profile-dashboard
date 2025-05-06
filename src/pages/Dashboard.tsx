@@ -154,6 +154,19 @@ const getActivePolicyForDevice = (
   return defaultPolicy;
 };
 
+// Function to generate a consistent color based on IP address
+const getIpBasedColor = (ip: string): string => {
+  // Simple hash function to generate a consistent color from an IP
+  let hash = 0;
+  for (let i = 0; i < ip.length; i++) {
+    hash = ip.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Get a hue between 200 and 280 (blue-ish colors)
+  const hue = 200 + (Math.abs(hash) % 80);
+  return `hsl(${hue}, 70%, 60%)`;
+};
+
 const Dashboard = () => {
   const [policies, setPolicies] = useState<ZonePolicy[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);

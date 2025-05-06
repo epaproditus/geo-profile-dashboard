@@ -394,7 +394,42 @@ export const simplemdmApi = {
       console.error(`Error removing profile ${profileId} from device ${deviceId}:`, error);
       throw error;
     }
-  }
+  },
+
+  /**
+   * Remove a profile from a device
+   */
+  async removeProfileFromDevice(profileId: string, deviceId: string): Promise<any> {
+    console.log(`Removing profile ${profileId} from device ${deviceId}`);
+    
+    try {
+      const response = await apiClient.delete(`/profiles/${profileId}/devices/${deviceId}`);
+      console.log(`Profile ${profileId} successfully removed from device ${deviceId}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to remove profile ${profileId} from device ${deviceId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Check if a profile is removed from a device
+   */
+  async isProfileRemovedFromDevice(profileId: string, deviceId: string): Promise<boolean> {
+    try {
+      // This checks if a profile is installed on a device
+      await apiClient.get(`/devices/${deviceId}/profiles/${profileId}`);
+      // If the above doesn't throw, the profile exists
+      return false;
+    } catch (error: any) {
+      // If the error is 404, that means the profile is not installed
+      if (error?.response?.status === 404) {
+        return true;
+      }
+      // For other errors, rethrow
+      throw error;
+    }
+  },
 };
 
 export default simplemdmApi;
