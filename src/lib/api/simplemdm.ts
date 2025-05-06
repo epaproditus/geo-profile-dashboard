@@ -423,6 +423,55 @@ export const simplemdmApi = {
       throw error;
     }
   },
+
+  // Get all profiles (handling pagination)
+  async getAllProfiles() {
+    try {
+      let allProfiles: SimpleMDMProfile[] = [];
+      let hasMore = true;
+      let startingAfter: string | undefined = undefined;
+      
+      // Use a higher limit to reduce API calls
+      const limit = 100;
+      
+      console.log('Starting pagination to fetch all profiles...');
+      
+      while (hasMore) {
+        console.log(`Fetching profiles batch with starting_after=${startingAfter || 'none'}`);
+        const response = await this.getProfiles({ 
+          limit, 
+          starting_after: startingAfter 
+        });
+        
+        if (!response.data || !Array.isArray(response.data)) {
+          console.error('Unexpected response format when fetching profiles:', response);
+          break;
+        }
+        
+        console.log(`Received ${response.data.length} profiles in this batch`);
+        
+        // Add the current page of profiles to our result
+        allProfiles = [...allProfiles, ...response.data];
+        
+        // Check if there are more profiles to fetch
+        hasMore = response.has_more || false;
+        
+        // Set the cursor for the next page if there are more
+        if (hasMore && response.data.length > 0) {
+          startingAfter = response.data[response.data.length - 1].id.toString();
+          console.log(`More profiles exist, next cursor: ${startingAfter}`);
+        } else {
+          console.log('No more profiles to fetch');
+        }
+      }
+      
+      console.log(`Retrieved ${allProfiles.length} total profiles`);
+      return { data: allProfiles };
+    } catch (error) {
+      console.error('Error fetching all profiles:', error);
+      throw error;
+    }
+  },
 };
 
 export default simplemdmApi;

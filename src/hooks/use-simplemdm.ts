@@ -156,6 +156,15 @@ export const useProfile = (profileId: number | string) => {
   });
 };
 
+// New hook to fetch ALL profiles with pagination handling
+export const useAllProfiles = () => {
+  return useQuery<{ data: SimpleMDMProfile[] }>({
+    queryKey: ['allProfiles'],
+    queryFn: () => simplemdmApi.getAllProfiles(),
+    staleTime: 5 * 60 * 1000, // 5 minutes cache to avoid repeated calls
+  });
+};
+
 export const usePushProfileToDevice = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();

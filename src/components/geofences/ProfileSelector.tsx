@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useProfiles } from "@/hooks/use-simplemdm";
+import { useAllProfiles } from "@/hooks/use-simplemdm";
 import { SimpleMDMProfile } from "@/lib/api/simplemdm";
 import { 
   Card, 
@@ -31,7 +31,8 @@ export default function ProfileSelector({
   onProfilesChange 
 }: ProfileSelectorProps) {
   const [search, setSearch] = useState("");
-  const { data: profilesData, isLoading, error } = useProfiles();
+  // Using the new hook that fetches ALL profiles with pagination handling
+  const { data: profilesData, isLoading, error } = useAllProfiles();
 
   // Function to handle selecting a profile
   const handleSelectProfile = (profile: SimpleMDMProfile) => {
