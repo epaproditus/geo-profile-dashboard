@@ -55,6 +55,128 @@ List all devices (with pagination support):
 
 ```
 GET https://a.simplemdm.com/api/v1/devices
+
+curl https://a.simplemdm.com/api/v1/devices \
+  -u ${API_KEY}:
+{
+  "data": [
+    {
+      "type": "device",
+      "id": 121,
+      "attributes": {
+        "name": "Mike's iPhone",
+        "last_seen_at": "2022-07-13T16:00:54.000-07:00",
+        "last_seen_ip": "203.0.113.0",
+        "enrolled_at": "2022-11-14T21:37:37.000-08:00",
+        "status": "enrolled",
+        "enrollment_channels": [
+          "device"
+        ],
+        "device_name": "Mike's iPhone",
+        "os_version": "14.7",
+        "build_version": "18G5042c",
+        "model_name": "iPhone 7",
+        "model": "NG4W2LL",
+        "product_name": "iPhone9,1",
+        "unique_identifier": "4A08359C-1D3A-5D3E-939E-FFA6A561321D",
+        "serial_number": "DNFJE9DNG5MG",
+        "processor_architecture": null,
+        "imei": "35 445506 652132 5",
+        "meid": "35404596608032",
+        "device_capacity": 128.0,
+        "available_device_capacity": 119.07,
+        "battery_level": "100%",
+        "modem_firmware_version": "8.80.00",
+        "iccid": "8914 8110 0002 8094 4264",
+        "bluetooth_mac": "f0:db:e2:df:e9:11",
+        "ethernet_macs": [],
+        "wifi_mac": "f0:db:e2:df:e9:2f",
+        "current_carrier_network": "Verizon",
+        "sim_carrier_network": null,
+        "subscriber_carrier_network": "Verizon",
+        "carrier_settings_version": "46.0.1",
+        "phone_number": "+15555555555",
+        "voice_roaming_enabled": true,
+        "data_roaming_enabled": false,
+        "is_roaming": false,
+        "subscriber_mcc": "311",
+        "subscriber_mnc": "480",
+        "simmnc": null,
+        "current_mcc": "310",
+        "current_mnc": "00",
+        "hardware_encryption_caps": 3,
+        "passcode_present": false,
+        "passcode_compliant": true,
+        "passcode_compliant_with_profiles": true,
+        "is_supervised": true,
+        "is_dep_enrollment": false,
+        "is_user_approved_enrollment": null,
+        "is_device_locator_service_enabled": false,
+        "is_do_not_disturb_in_effect": false,
+        "personal_hotspot_enabled": false,
+        "itunes_store_account_is_active": false,
+        "cellular_technology": 3,
+        "last_cloud_backup_date": null,
+        "is_activation_lock_enabled": false,
+        "is_cloud_backup_enabled": false,
+        "filevault_enabled": false,
+        "filevault_recovery_key": null,
+        "firmware_password_enabled": false,
+        "recovery_lock_password_enabled": false,
+        "remote_desktop_enabled": false,
+        "firmware_password": null,
+        "recovery_lock_password": null,
+        "managed_apple_id": testing@simplemdm.com,
+        "firewall": {
+          "enabled": null,
+          "block_all_incoming": null,
+          "stealth_mode": null
+        },
+        "system_integrity_protection_enabled": null,
+        "os_update": {
+          "automatic_os_installation_enabled": null,
+          "automatic_app_installation_enabled": null,
+          "automatic_check_enabled": null,
+          "automatic_security_updates_enabled": null,
+          "background_download_enabled": null,
+          "catalog_url": null,
+          "default_catalog": null,
+          "perform_periodic_check": null,
+          "previous_scan_date": null,
+          "previous_scan_result": null
+        },
+        "location_latitude": null,
+        "location_longitude": null,
+        "location_accuracy": null,
+        "location_updated_at": null
+      },
+      "relationships": {
+        "device_group": {
+          "data": {
+            "type": "device_group",
+            "id": 1
+          }
+        },
+        "custom_attribute_values" {
+          "data": [
+            {
+              "type": "custom_attribute_value",
+              "id": "custom_attribute_name",
+              "attributes": {
+                "secret": false,
+                "value": "custom attribute value"
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    ...
+
+  ],
+  "has_more": false
+}
 ```
 
 Get a specific device:

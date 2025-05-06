@@ -385,28 +385,21 @@ export const simplemdmApi = {
     }
   },
   
-  // Remove a profile from a specific device
+  // Remove a profile from a specific device - handles 409 errors gracefully
   async removeProfileFromDevice(profileId: number | string, deviceId: number | string) {
-    try {
-      const response = await apiClient.delete(`/profiles/${profileId}/devices/${deviceId}`);
-      return response.data;
-    } catch (error) {
-      console.error(`Error removing profile ${profileId} from device ${deviceId}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Remove a profile from a device
-   */
-  async removeProfileFromDevice(profileId: string, deviceId: string): Promise<any> {
     console.log(`Removing profile ${profileId} from device ${deviceId}`);
     
     try {
       const response = await apiClient.delete(`/profiles/${profileId}/devices/${deviceId}`);
       console.log(`Profile ${profileId} successfully removed from device ${deviceId}`);
-      return response.data;
-    } catch (error) {
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      // Handle 409 conflict errors - likely means the profile is not installed or already removed
+      if (error?.response?.status === 409) {
+        console.log(`Profile ${profileId} was not removed from device ${deviceId} - 409 Conflict (profile may not be installed)`);
+        return { success: true, alreadyRemoved: true };
+      }
+      
       console.error(`Failed to remove profile ${profileId} from device ${deviceId}:`, error);
       throw error;
     }

@@ -205,66 +205,138 @@ const Dashboard = () => {
         description: "Real-time network monitoring has been turned off.",
         duration: 3000,
       });
+      console.log('🛑 IP address monitoring STOPPED');
     } else {
-      // Turn on monitoring
-      pollingIntervalRef.current = setInterval(async () => {
-        console.log('Checking for IP address changes...');
-        
-        // Fetch fresh device data
-        const freshData = await refetchDevices();
-        
-        if (!freshData.data?.data) {
-          console.log('No device data available in refresh');
+      console.log('🚀 Starting IP monitoring with improved detection...');
+      
+      // Start with an immediate check
+      const checkImmediately = async () => {
+        if (!devicesData?.data) {
+          console.log('⚠️ No device data available for initial check');
           return;
         }
         
-        // Check each device for IP changes
-        for (const device of freshData.data.data) {
-          const deviceId = device.id.toString();
-          const currentIp = device.attributes.last_seen_ip;
-          const previousIp = deviceIpMap[deviceId];
-          
-          // Skip devices without an IP
-          if (!currentIp) continue;
-          
-          // Check if the IP has changed
-          if (currentIp !== previousIp) {
-            console.log(`Device ${deviceId} (${device.attributes.name}) IP changed from ${previousIp || 'none'} to ${currentIp}`);
-            
-            // Update the stored IP
-            setDeviceIpMap(prev => ({
-              ...prev,
-              [deviceId]: currentIp
-            }));
-            
-            try {
-              // Process this device with the new IP
-              const result = await profilePolicyService.processDeviceConnection(
-                deviceId, 
-                currentIp
-              );
-              
-              // If profiles were pushed, show a toast notification
-              if (result.policyApplied) {
-                toast({
-                  title: "Network Change Detected",
-                  description: `Applied ${result.profilesPushed} profile(s) from "${result.policyName}" policy to device "${device.attributes.name}" based on new IP address.`,
-                  duration: 5000,
-                });
-              }
-            } catch (error) {
-              console.error(`Error processing device ${deviceId} IP change:`, error);
-            }
+        console.log('📡 IMMEDIATE CHECK: Making initial API call...');
+        
+        // Force a device to connect by requesting a location update for one device
+        const firstDevice = devicesData.data[0];
+        if (firstDevice) {
+          try {
+            console.log(`📱 Requesting location update for device ${firstDevice.id} (${firstDevice.attributes.name})`);
+            await updateDeviceLocation.mutateAsync(firstDevice.id);
+            console.log('✅ Initial location update completed');
+          } catch (err) {
+            console.error('❌ Initial location update failed:', err);
           }
         }
+        
+        // Now fetch fresh data to get current IP addresses
+        console.log('📊 Fetching initial device data...');
+        const freshData = await refetchDevices();
+        
+        if (freshData?.data?.data) {
+          // Create initial IP map from fresh data
+          const newDeviceIpMap: Record<string, string> = {};
+          freshData.data.data.forEach(device => {
+            const deviceId = device.id.toString();
+            const deviceIp = device.attributes.last_seen_ip;
+            if (deviceIp) {
+              newDeviceIpMap[deviceId] = deviceIp;
+              console.log(`📌 BASELINE: Device ${deviceId} (${device.attributes.name}) has IP: ${deviceIp}`);
+            } else {
+              console.log(`⚠️ BASELINE: Device ${deviceId} (${device.attributes.name}) has NO IP address in the response`);
+            }
+          });
+          
+          // Store initial IPs
+          setDeviceIpMap(newDeviceIpMap);
+        }
+      };
+      
+      // Run the immediate check
+      checkImmediately();
+      
+      // Set up the regular interval with a shorter, more reliable check
+      console.log(`🔄 Setting up regular interval to check every ${IP_CHECK_INTERVAL_MS/1000} seconds`);
+      
+      // Use a simpler approach that's more likely to fire reliably
+      pollingIntervalRef.current = setInterval(() => {
+        const timestamp = new Date().toISOString();
+        console.log(`⏰ INTERVAL FIRED at ${timestamp}`);
+        
+        // Just do a simple refetch to check if interval is working
+        refetchDevices()
+          .then(freshData => {
+            console.log('📊 Got fresh device data at', new Date().toISOString());
+            
+            if (!freshData?.data?.data) {
+              console.log('❌ No device data in response');
+              return;
+            }
+            
+            // Log the device count to confirm we got data
+            console.log(`📱 Retrieved ${freshData.data.data.length} devices`);
+            
+            // Check each device for IP changes
+            freshData.data.data.forEach(device => {
+              const deviceId = device.id.toString();
+              const deviceName = device.attributes.name;
+              const currentIp = device.attributes.last_seen_ip;
+              const previousIp = deviceIpMap[deviceId];
+              
+              console.log(`🔄 Device ${deviceId} (${deviceName}):`);
+              console.log(`   - Previous stored IP: ${previousIp || 'none'}`);
+              console.log(`   - Current API IP: ${currentIp || 'none'}`);
+              
+              // Skip devices without an IP
+              if (!currentIp) return;
+              
+              // Check if the IP has changed
+              if (currentIp !== previousIp) {
+                console.log(`🔔 IP CHANGE DETECTED: Device ${deviceId} (${deviceName}) IP changed from ${previousIp || 'none'} to ${currentIp}`);
+                
+                // Update the stored IP
+                setDeviceIpMap(prev => ({
+                  ...prev,
+                  [deviceId]: currentIp
+                }));
+                
+                // Process the IP change
+                profilePolicyService.processDeviceConnection(deviceId, currentIp)
+                  .then(result => {
+                    if (result.policyApplied) {
+                      let description = `Applied ${result.profilesPushed} profile(s) from "${result.policyName}" policy to device "${deviceName}"`;
+                      
+                      if (result.profilesRemoved && result.profilesRemoved > 0) {
+                        description += ` and removed ${result.profilesRemoved} outdated profile(s)`;
+                      }
+                      
+                      description += ` based on new IP address.`;
+                      
+                      toast({
+                        title: "Network Change Detected",
+                        description: description,
+                        duration: 5000,
+                      });
+                    }
+                  })
+                  .catch(error => {
+                    console.error(`❌ Error processing device ${deviceId} IP change:`, error);
+                  });
+              }
+            });
+          })
+          .catch(error => {
+            console.error('❌ Error fetching devices:', error);
+          });
       }, IP_CHECK_INTERVAL_MS);
       
       setIpMonitoringActive(true);
       
       toast({
         title: "Network Monitoring Enabled",
-        description: `Monitoring enabled. Checking device networks every ${IP_CHECK_INTERVAL_MS/1000} seconds.`,
-        duration: 3000,
+        description: `Monitoring enabled. Checking device IP addresses every ${IP_CHECK_INTERVAL_MS/1000} seconds.`,
+        duration: 5000,
       });
     }
   };
@@ -326,96 +398,34 @@ const Dashboard = () => {
     // We only want to run this when the deviceData or policies change
   }, [devicesData?.data, policies, toast]);
   
-  // Add effect to continuously monitor device IP addresses
+  // Add effect to continuously monitor device status (general info including IP)
   useEffect(() => {
     // Only run if we have device data and policies loaded
     if (!devicesData?.data || policies.length === 0) return;
     
-    // Initial processing of devices
+    // Initial processing of devices - create a map of current IP addresses
     const processInitialDeviceData = async () => {
-      // Create a map of current IP addresses
-      const newDeviceIpMap: Record<string, string> = {};
+      const newDeviceIpMap: Record<string, string | null> = {};
       
       // Process each device
       for (const device of devicesData.data) {
         const deviceId = device.id.toString();
         const deviceIp = device.attributes.last_seen_ip;
         
-        if (deviceIp) {
-          // Store the current IP for later comparison
-          newDeviceIpMap[deviceId] = deviceIp;
-        }
+        // Store the current IP for later comparison (even if null)
+        newDeviceIpMap[deviceId] = deviceIp || null;
+        
+        console.log(`Initial IP for device ${deviceId}: ${deviceIp || 'none'}`);
       }
       
       // Update the IP map
       setDeviceIpMap(newDeviceIpMap);
     };
     
-    // Process initial device data
+    // Process initial device data to create baseline
     processInitialDeviceData();
     
-    // Start polling for IP address changes
-    pollingIntervalRef.current = setInterval(async () => {
-      console.log('Checking for IP address changes...');
-      
-      // Fetch fresh device data
-      const freshData = await refetchDevices();
-      
-      if (!freshData.data?.data) {
-        console.log('No device data available in refresh');
-        return;
-      }
-      
-      // Check each device for IP changes
-      for (const device of freshData.data.data) {
-        const deviceId = device.id.toString();
-        const currentIp = device.attributes.last_seen_ip;
-        const previousIp = deviceIpMap[deviceId];
-        
-        // Skip devices without an IP
-        if (!currentIp) continue;
-        
-        // Check if the IP has changed
-        if (currentIp !== previousIp) {
-          console.log(`Device ${deviceId} (${device.attributes.name}) IP changed from ${previousIp || 'none'} to ${currentIp}`);
-          
-          // Update the stored IP
-          setDeviceIpMap(prev => ({
-            ...prev,
-            [deviceId]: currentIp
-          }));
-          
-          try {
-            // Process this device with the new IP
-            const result = await profilePolicyService.processDeviceConnection(
-              deviceId, 
-              currentIp
-            );
-            
-            // Show a toast notification based on what happened
-            if (result.policyApplied) {
-              // Create a more detailed notification that includes profile removals
-              let description = `Applied ${result.profilesPushed} profile(s) from "${result.policyName}" policy to device "${device.attributes.name}"`;
-              
-              // Add info about removed profiles if any were removed
-              if (result.profilesRemoved && result.profilesRemoved > 0) {
-                description += ` and removed ${result.profilesRemoved} outdated profile(s)`;
-              }
-              
-              description += ` based on new IP address.`;
-              
-              toast({
-                title: "Network Change Detected",
-                description: description,
-                duration: 5000,
-              });
-            }
-          } catch (error) {
-            console.error(`Error processing device ${deviceId} IP change:`, error);
-          }
-        }
-      }
-    }, IP_CHECK_INTERVAL_MS);
+    // Don't start automatic polling here - let user control it with the toggle button
     
     // Clean up interval on component unmount
     return () => {
@@ -424,8 +434,8 @@ const Dashboard = () => {
         pollingIntervalRef.current = null;
       }
     };
-  }, [devicesData?.data, policies, toast, refetchDevices]);
-  
+  }, [devicesData?.data, policies]);
+
   // Add a manual refresh button to sync UI with actual policy status
   const handleManualRefresh = async () => {
     // Force refresh the device data
