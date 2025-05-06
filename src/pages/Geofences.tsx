@@ -18,13 +18,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Plus, Trash, Search, Map as MapIcon, Edit, Shield, Check, Info, Smartphone } from "lucide-react";
+import { MapPin, Plus, Trash, Search, Map as MapIcon, Edit, Shield, Check, Info, Smartphone, Wifi } from "lucide-react";
 import GeofenceAddressSearch from "@/components/geofences/GeofenceAddressSearch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import PolicyLocationSearch from '@/components/geofences/PolicyLocationSearch';
 import DeviceSelector from '@/components/geofences/DeviceSelector';
 import ProfileSelector from '@/components/geofences/ProfileSelector';
+import { getLocationFromIp } from '@/lib/utils/ip-geolocation';
 
 // Type for geofence objects
 interface Geofence {
@@ -48,6 +49,12 @@ interface ZonePolicy {
     longitude: number;
     radius: number; // in meters
     geofenceId: string; // Reference to the geofence
+  }[];
+  // New field for IP-based geofencing
+  ipRanges?: {
+    displayName: string;
+    ipAddress: string;  // Single IP address
+    geofenceId: string;
   }[];
   devices: {
     id: string;
@@ -218,6 +225,11 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
   // Find all geofences associated with this policy
   const policyGeofences = geofences.filter(geofence => geofence.zonePolicyId === policy.id);
   
+  // Get total number of IP addresses and GPS locations
+  const ipLocationsCount = policy.ipRanges?.length || 0;
+  const gpsLocationsCount = policy.locations?.length || 0;
+  const totalLocationsCount = ipLocationsCount + gpsLocationsCount;
+  
   return (
     <Card className={policy.isDefault ? "border-primary h-full" : "h-full"}>
       <CardHeader className="pb-3">
@@ -242,7 +254,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
               </Badge>
             )}
             <Badge variant="secondary">
-              {policy.locations.length} location{policy.locations.length !== 1 ? 's' : ''}
+              {totalLocationsCount} location{totalLocationsCount !== 1 ? 's' : ''}
             </Badge>
           </div>
         </div>
@@ -256,7 +268,7 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           }}>
             <TabsTrigger value="locations">
               <MapPin className="h-4 w-4 mr-2" />
-              Locations ({policy.locations.length})
+              Locations ({totalLocationsCount})
             </TabsTrigger>
             
             {policy.devices.length > 0 && (
@@ -276,14 +288,67 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
           
           <TabsContent value="locations" className="pt-4">
             <div className="space-y-4">
+              {/* Show IP-based locations first */}
+              {policy.ipRanges && policy.ipRanges.length > 0 && policy.ipRanges.map((ipRange, index) => {
+                // Try to get geographic location for this IP (for display purposes)
+                const ipLocation = getLocationFromIp(ipRange.ipAddress);
+                
+                return (
+                  <div key={`ip-${index}`} className="border rounded-lg overflow-hidden bg-secondary/5">
+                    <div className="flex flex-col md:flex-row">
+                      <div className="p-4 flex-1 md:w-1/2">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Wifi className="h-4 w-4 text-blue-500" />
+                          <span className="font-medium">
+                            IP Network {index + 1}
+                          </span>
+                        </div>
+                        <div className="text-sm space-y-1">
+                          <p>{ipRange.displayName}</p>
+                          <p className="text-blue-600 font-mono text-xs">
+                            {ipRange.ipAddress}
+                          </p>
+                          {ipLocation && (
+                            <p className="text-muted-foreground text-xs">
+                              Approximate Location: {ipLocation.latitude ? ipLocation.latitude.toFixed(6) : 'unknown'}, {ipLocation.longitude ? ipLocation.longitude.toFixed(6) : 'unknown'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {ipLocation && ipLocation.latitude && ipLocation.longitude && (
+                        <div className="md:w-1/2 h-[180px] md:h-auto">
+                          <Map
+                            geofences={[{
+                              id: ipRange.geofenceId,
+                              name: ipRange.displayName,
+                              latitude: ipLocation.latitude,
+                              longitude: ipLocation.longitude,
+                              radius: ipLocation.accuracy || 100,
+                              profileId: null,
+                              zonePolicyId: policy.id,
+                              color: "#2563eb", // Blue for IP-based locations
+                              borderColor: "#1e40af"
+                            }]}
+                            center={[ipLocation.longitude, ipLocation.latitude]}
+                            zoom={13}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {/* Then show GPS-based locations if any */}
               {policy.locations.map((location, index) => (
-                <div key={index} className="border rounded-lg overflow-hidden bg-secondary/5">
+                <div key={`gps-${index}`} className="border rounded-lg overflow-hidden bg-secondary/5">
                   <div className="flex flex-col md:flex-row">
                     <div className="p-4 flex-1 md:w-1/2">
                       <div className="flex items-center gap-2 mb-2">
                         <MapPin className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium">
-                          Location {policy.locations.length > 1 ? index + 1 : ''}
+                          GPS Location {policy.locations.length > 1 ? index + 1 : ''}
                         </span>
                         {policy.isDefault && index === 0 && (
                           <Badge variant="outline" className="text-xs">
@@ -320,6 +385,16 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
                   </div>
                 </div>
               ))}
+              
+              {totalLocationsCount === 0 && (
+                <div className="border border-dashed rounded-md p-6 flex flex-col items-center justify-center text-muted-foreground">
+                  <MapPin className="h-8 w-8 mb-2 opacity-20" />
+                  <p className="text-sm text-center mb-1">No locations defined</p>
+                  <p className="text-xs text-center">
+                    Edit this policy to add IP addresses or GPS locations
+                  </p>
+                </div>
+              )}
               
               {policy.isDefault && (
                 <p className="text-xs text-muted-foreground italic">
@@ -823,8 +898,9 @@ const Geofences = () => {
   const handleUpdatePolicy = () => {
     if (!editingPolicy) return;
     
-    // Validate location for non-default policies
-    if (!editingPolicy.isDefault) {
+    // Validate location for non-default policies if they have a GPS location
+    // Don't try to validate locations if the policy only uses IP addresses
+    if (!editingPolicy.isDefault && editingPolicy.locations && editingPolicy.locations.length > 0) {
       const { latitude, longitude, displayName, radius } = editingPolicy.locations[0];
       
       if (!displayName.trim()) {
@@ -862,6 +938,18 @@ const Geofences = () => {
         });
         return;
       }
+    }
+    
+    // Ensure the policy has at least a location or IP range (unless it's a default policy)
+    if (!editingPolicy.isDefault && 
+        (!editingPolicy.locations || editingPolicy.locations.length === 0) && 
+        (!editingPolicy.ipRanges || editingPolicy.ipRanges.length === 0)) {
+      toast({
+        title: "Missing Location Information",
+        description: "Please add at least one GPS location or IP address to the policy",
+        variant: "destructive"
+      });
+      return;
     }
     
     const updatedPolicies = policies.map(p => 
@@ -938,45 +1026,69 @@ const Geofences = () => {
       return;
     }
   
-    // When using the new direct location selection
+    // Create basic policy structure
+    const newPolicy: ZonePolicy = {
+      id: `policy-${Date.now()}`,
+      name: newPolicyName,
+      description: newPolicyDescription || "",
+      isDefault: false,
+      locations: [], // Default to empty locations array
+      devices: newPolicyDevices, // Include the selected devices
+      profiles: newPolicyProfiles // Include the selected profiles
+    };
+
+    // Add GPS location if provided
     if (newPolicyLocation) {
-      const newPolicy: ZonePolicy = {
-        id: `policy-${Date.now()}`,
-        name: newPolicyName,
-        description: newPolicyDescription || "",
-        isDefault: false,
-        locations: [
-          {
-            ...newPolicyLocation,
-            geofenceId: `geo-${Date.now()}` // Generate a unique ID for the location
-          }
-        ],
-        devices: newPolicyDevices, // Include the selected devices
-        profiles: newPolicyProfiles // Include the selected profiles
-      };
+      newPolicy.locations = [
+        {
+          ...newPolicyLocation,
+          geofenceId: `geo-${Date.now()}` // Generate a unique ID for the location
+        }
+      ];
+    }
+    
+    // Add IP addresses if provided (coming from the form inputs)
+    const ipAddressInput = document.querySelector('input[placeholder="IP Address (e.g., 192.168.1.1)"]') as HTMLInputElement;
+    const locationNameInput = document.querySelector('input[placeholder="Location Name (e.g., Main Office)"]') as HTMLInputElement;
+    
+    if (ipAddressInput && ipAddressInput.value.trim()) {
+      // Initialize ipRanges if needed
+      if (!newPolicy.ipRanges) {
+        newPolicy.ipRanges = [];
+      }
       
-      const updatedPolicies = [...policies, newPolicy];
-      setPolicies(updatedPolicies);
-      savePoliciesToLocalStorage(updatedPolicies);
-      
-      setNewPolicyName('');
-      setNewPolicyDescription('');
-      setNewPolicyLocation(null);
-      setNewPolicyDevices([]); // Reset selected devices
-      setNewPolicyProfiles([]); // Reset selected profiles
-      setIsNewPolicyDialogOpen(false);
-      
-      toast({
-        title: "Policy Created",
-        description: `"${newPolicyName}" has been created successfully.`,
-      });
-    } else {
-      toast({
-        title: "Missing Information",
-        description: "Please select a location for this policy",
-        variant: "destructive"
+      newPolicy.ipRanges.push({
+        displayName: locationNameInput?.value.trim() || "Office Network",
+        ipAddress: ipAddressInput.value.trim(),
+        geofenceId: `ip-${Date.now()}`
       });
     }
+    
+    // Check if we have either GPS location or IP addresses
+    if (newPolicy.locations.length === 0 && (!newPolicy.ipRanges || newPolicy.ipRanges.length === 0)) {
+      toast({
+        title: "Missing Information",
+        description: "Please add at least one location (GPS or IP address)",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    const updatedPolicies = [...policies, newPolicy];
+    setPolicies(updatedPolicies);
+    savePoliciesToLocalStorage(updatedPolicies);
+    
+    setNewPolicyName('');
+    setNewPolicyDescription('');
+    setNewPolicyLocation(null);
+    setNewPolicyDevices([]); // Reset selected devices
+    setNewPolicyProfiles([]); // Reset selected profiles
+    setIsNewPolicyDialogOpen(false);
+    
+    toast({
+      title: "Policy Created",
+      description: `"${newPolicyName}" has been created successfully.`,
+    });
   };
 
   const handleDeleteGeofence = (id: string) => {
@@ -1198,7 +1310,6 @@ const Geofences = () => {
         </DialogContent>
       </Dialog>
 
-      {/* New Policy Dialog */}
       <Dialog open={isNewPolicyDialogOpen} onOpenChange={setIsNewPolicyDialogOpen}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1213,7 +1324,7 @@ const Geofences = () => {
               <Label htmlFor="policy-name">Policy Name</Label>
               <Input 
                 id="policy-name" 
-                placeholder="e.g., Secure Facility Policy"
+                placeholder="e.g., Social Media Policy"
                 value={newPolicyName}
                 onChange={(e) => setNewPolicyName(e.target.value)}
               />
@@ -1248,9 +1359,95 @@ const Geofences = () => {
               </TabsList>
               
               <TabsContent value="locations" className="pt-4">
-                <PolicyLocationSearch
-                  onLocationSelect={(location) => setNewPolicyLocation(location)}
-                />
+                {/* IP Address Configuration Section - Now the primary focus */}
+                <div className="space-y-4 mb-6">
+                  <div className="flex justify-between items-center">
+                    <Label>Device IP Addresses</Label>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        // Initialize ipRanges if it doesn't exist
+                        const newPolicy = {...DEFAULT_POLICY};
+                        if (!newPolicy.ipRanges) {
+                          newPolicy.ipRanges = [];
+                        }
+                        newPolicy.ipRanges.push({
+                          displayName: `Office Network ${newPolicy.ipRanges.length + 1}`,
+                          ipAddress: '',
+                          geofenceId: `ip-${Date.now()}`
+                        });
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add IP Address
+                    </Button>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Enter exact IP addresses for the device locations where this policy should apply.
+                    </p>
+                    
+                    <div className="grid grid-cols-[1fr,1fr,auto] gap-2 items-center">
+                      <Input
+                        placeholder="Location Name (e.g., Main Office)"
+                        onChange={(e) => {
+                          // Update location display name
+                        }}
+                      />
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="IP Address (e.g., 192.168.1.1)"
+                          onChange={(e) => {
+                            // Update IP address
+                          }}
+                        />
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          title="Get my current IP address"
+                          onClick={() => {
+                            // Get the current IP address
+                            fetch('https://api.ipify.org?format=json')
+                              .then(response => response.json())
+                              .then(data => {
+                                // Update the IP input field with the current IP
+                                const ipField = document.querySelector('input[placeholder="IP Address (e.g., 192.168.1.1)"]') as HTMLInputElement;
+                                if (ipField) {
+                                  ipField.value = data.ip;
+                                  // Trigger a change event to make sure state is updated
+                                  const event = new Event('input', { bubbles: true });
+                                  ipField.dispatchEvent(event);
+                                }
+                                
+                                toast({
+                                  title: "IP Address Detected",
+                                  description: `Your current IP address is: ${data.ip}`,
+                                });
+                              })
+                              .catch(error => {
+                                console.error('Error fetching IP:', error);
+                                toast({
+                                  title: "Error Detecting IP",
+                                  description: "Could not fetch your current IP address. Please try again or enter it manually.",
+                                  variant: "destructive"
+                                });
+                              });
+                          }}
+                        >
+                          <Wifi className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </TabsContent>
               
               <TabsContent value="devices" className="pt-4">
@@ -1279,7 +1476,7 @@ const Geofences = () => {
             </Button>
             <Button 
               onClick={handleCreatePolicy}
-              disabled={!newPolicyName.trim() || !newPolicyLocation}
+              disabled={!newPolicyName.trim()}
             >
               Create Policy
             </Button>
@@ -1381,79 +1578,133 @@ const Geofences = () => {
                   </TabsList>
                   
                   <TabsContent value="locations" className="pt-4">
-                    {/* Display tabs for multiple locations */}
-                    {editingPolicy.locations.length > 0 && (
-                      <Tabs defaultValue="0" className="w-full">
-                        <TabsList className="grid" style={{ gridTemplateColumns: `repeat(${Math.min(editingPolicy.locations.length, 4)}, 1fr)` }}>
-                          {editingPolicy.locations.map((_, index) => (
-                            <TabsTrigger key={index} value={index.toString()}>
-                              Location {index + 1}
-                            </TabsTrigger>
-                          ))}
-                        </TabsList>
-                        
-                        {editingPolicy.locations.map((location, index) => (
-                          <TabsContent key={index} value={index.toString()} className="relative">
-                            <PolicyLocationSearch
-                              initialLocation={location}
-                              onLocationSelect={(updatedLocation) => 
-                                setEditingPolicy(prev => {
-                                  if (!prev) return null;
-                                  const newLocations = [...prev.locations];
-                                  newLocations[index] = updatedLocation;
-                                  return {...prev, locations: newLocations};
-                                })
-                              }
-                            />
-                            
-                            {/* Delete location button - only show if there's more than one location OR if it's the default policy */}
-                            {(editingPolicy.locations.length > 1 || editingPolicy.isDefault) && (
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                className="absolute top-0 right-0"
-                                onClick={() => {
-                                  if (editingPolicy.isDefault) {
-                                    // For default policy, we'll just reset the location to an empty array
-                                    // which means it will apply globally without location restrictions
-                                    setEditingPolicy(prev => {
-                                      if (!prev) return null;
-                                      return {
-                                        ...prev,
-                                        locations: []
-                                      };
-                                    });
-                                    
-                                    toast({
-                                      title: "Default Policy Updated",
-                                      description: "The default policy will now apply globally without location restrictions.",
-                                    });
-                                  } else if (editingPolicy.locations.length > 1) {
-                                    // Normal deletion for non-default policies with multiple locations
-                                    setEditingPolicy(prev => {
-                                      if (!prev) return null;
-                                      const newLocations = [...prev.locations];
-                                      newLocations.splice(index, 1);
-                                      return {...prev, locations: newLocations};
-                                    });
-                                  } else {
-                                    // Warn user that at least one location is required for non-default policies
-                                    toast({
-                                      title: "Location Required",
-                                      description: "Non-default policies must have at least one location.",
-                                      variant: "destructive"
-                                    });
+                    {/* Only show IP-based location configuration */}
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <Label>Device IP Addresses</Label>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setEditingPolicy(prev => {
+                              if (!prev) return null;
+                              const currentIpRanges = prev.ipRanges || [];
+                              return {
+                                ...prev,
+                                ipRanges: [
+                                  ...currentIpRanges,
+                                  {
+                                    displayName: `Office Network ${currentIpRanges.length + 1}`,
+                                    ipAddress: '',
+                                    geofenceId: `ip-${Date.now()}`
                                   }
+                                ]
+                              };
+                            });
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add IP Address
+                        </Button>
+                      </div>
+                      
+                      {(!editingPolicy.ipRanges || editingPolicy.ipRanges.length === 0) && (
+                        <div className="border rounded-md p-6 flex flex-col items-center justify-center text-muted-foreground">
+                          <p className="text-sm text-center mb-2">No IP addresses defined</p>
+                          <p className="text-xs text-center max-w-md">
+                            Add IP addresses to apply this policy to devices at specific locations. 
+                            Enter the exact IP address of the network (e.g., 192.168.1.1).
+                          </p>
+                        </div>
+                      )}
+                      
+                      {editingPolicy.ipRanges && editingPolicy.ipRanges.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Enter exact IP addresses for the device locations where this policy should apply.
+                          </p>
+                          
+                          {editingPolicy.ipRanges.map((ipRange, idx) => (
+                            <div key={ipRange.geofenceId} className="grid grid-cols-[1fr,1fr,auto] gap-2 items-center">
+                              <Input
+                                placeholder="Location Name (e.g., Main Office)"
+                                value={ipRange.displayName}
+                                onChange={(e) => {
+                                  setEditingPolicy(prev => {
+                                    if (!prev || !prev.ipRanges) return prev;
+                                    const newRanges = [...prev.ipRanges];
+                                    newRanges[idx] = {...newRanges[idx], displayName: e.target.value};
+                                    return {...prev, ipRanges: newRanges};
+                                  });
+                                }}
+                              />
+                              <div className="flex gap-2">
+                                <Input
+                                  placeholder="IP Address (e.g., 192.168.1.1)"
+                                  value={ipRange.ipAddress}
+                                  onChange={(e) => {
+                                    setEditingPolicy(prev => {
+                                      if (!prev || !prev.ipRanges) return prev;
+                                      const newRanges = [...prev.ipRanges];
+                                      newRanges[idx] = {...newRanges[idx], ipAddress: e.target.value};
+                                      return {...prev, ipRanges: newRanges};
+                                    });
+                                  }}
+                                />
+                                <Button 
+                                  variant="secondary" 
+                                  size="icon"
+                                  title="Get my current IP address"
+                                  onClick={() => {
+                                    // Get the current IP address
+                                    fetch('https://api.ipify.org?format=json')
+                                      .then(response => response.json())
+                                      .then(data => {
+                                        // Update the IP input field with the current IP
+                                        const ipField = document.querySelector('input[placeholder="IP Address (e.g., 192.168.1.1)"]') as HTMLInputElement;
+                                        if (ipField) {
+                                          ipField.value = data.ip;
+                                          // Trigger a change event to make sure state is updated
+                                          const event = new Event('input', { bubbles: true });
+                                          ipField.dispatchEvent(event);
+                                        }
+                                        
+                                        toast({
+                                          title: "IP Address Detected",
+                                          description: `Your current IP address is: ${data.ip}`,
+                                        });
+                                      })
+                                      .catch(error => {
+                                        console.error('Error fetching IP:', error);
+                                        toast({
+                                          title: "Error Detecting IP",
+                                          description: "Could not fetch your current IP address. Please try again or enter it manually.",
+                                          variant: "destructive"
+                                        });
+                                      });
+                                  }}
+                                >
+                                  <Wifi className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => {
+                                  setEditingPolicy(prev => {
+                                    if (!prev || !prev.ipRanges) return prev;
+                                    const newRanges = prev.ipRanges.filter((_, i) => i !== idx);
+                                    return {...prev, ipRanges: newRanges};
+                                  });
                                 }}
                               >
-                                <Trash className="h-4 w-4 mr-2" />
-                                {editingPolicy.isDefault ? "Remove Location Restriction" : "Remove Location"}
+                                <Trash className="h-4 w-4" />
                               </Button>
-                            )}
-                          </TabsContent>
-                        ))}
-                      </Tabs>
-                    )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </TabsContent>
                   
                   <TabsContent value="devices" className="pt-4">

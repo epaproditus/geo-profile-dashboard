@@ -1,6 +1,7 @@
 import { simplemdmApi } from '@/lib/api/simplemdm';
 import { useToast } from "@/hooks/use-toast";
 import { usePushProfileToDevice } from '@/hooks/use-simplemdm';
+import { isIpInRange } from '@/lib/utils'; // Import the improved isIpInRange function
 
 // Type definitions
 interface Location {
@@ -18,9 +19,26 @@ interface Device {
     location_latitude?: string | null;
     location_longitude?: string | null;
     location_updated_at?: string | null;
+    ip_address?: string | null; // Added IP address to device attributes
   };
   latitude?: number;
   longitude?: number;
+  ip_address?: string; // Added as a top-level property too for flexibility
+}
+
+interface Policy {
+  id: string;
+  name: string;
+  description?: string;
+  isDefault: boolean;
+  locations: Location[];
+  ipRanges?: { // Added IP ranges to policy type
+    displayName: string;
+    ipAddress: string;  // Can be single IP or CIDR notation
+    geofenceId: string;
+  }[];
+  devices: { id: string; name?: string }[];
+  profiles: { id: string; name?: string }[];
 }
 
 // Store policies for use across the service
@@ -28,6 +46,16 @@ let currentPolicies: Policy[] = [];
 
 // Store local timestamps for device location updates
 const deviceLocationTimestamps: Record<string, number> = {};
+
+// Track which profiles are applied to which devices and by which policy
+// This helps us know which profiles to remove when a device's policy changes
+interface AppliedProfileRecord {
+  profileId: string;
+  policyId: string;
+  appliedAt: number; // timestamp
+}
+
+const deviceProfilesMap: Record<string, AppliedProfileRecord[]> = {};
 
 // Calculate distance between two points in meters using Haversine formula
 const calculateDistance = (
@@ -51,6 +79,7 @@ const calculateDistance = (
 };
 
 // Check if a device is within a policy location
+// This is only used for dashboard display purposes now
 const isDeviceInLocation = (
   deviceLat: number,
   deviceLng: number,
@@ -66,35 +95,60 @@ const isDeviceInLocation = (
   return distance <= location.radius;
 };
 
-// Check if device location is fresh (less than 5 minutes old)
+// Check if device IP is within a policy's IP ranges
+// This is the primary method for determining policy application
+const isDeviceIpInPolicyRange = (
+  deviceIp: string | null | undefined,
+  policy: Policy
+): boolean => {
+  if (!deviceIp || !policy.ipRanges || policy.ipRanges.length === 0) {
+    return false;
+  }
+  
+  console.log(`Checking if IP ${deviceIp} is within policy ${policy.name} IP ranges`);
+  
+  return policy.ipRanges.some(ipRange => {
+    if (!ipRange.ipAddress) return false;
+    
+    const matches = isIpInRange(deviceIp, ipRange.ipAddress);
+    console.log(`- Checking against ${ipRange.ipAddress}: ${matches ? 'MATCH' : 'No match'}`);
+    
+    return matches;
+  });
+};
+
+// Check if device location is fresh (less than 10 minutes old)
+// Only used for display purposes on the dashboard
 const isLocationFresh = (
   deviceId: string | number,
   locationUpdatedAt: string | null | undefined
 ): boolean => {
-  const deviceIdString = String(deviceId);
-  const currentTimestamp = new Date().getTime();
-  const fiveMinutesInMs = 5 * 60 * 1000;
-  
-  // Check our local timestamp first (when we last retrieved the device data)
-  if (deviceLocationTimestamps[deviceIdString]) {
-    const timeSinceOurUpdate = currentTimestamp - deviceLocationTimestamps[deviceIdString];
-    if (timeSinceOurUpdate <= fiveMinutesInMs) {
-      console.log(`Device ${deviceId} location is fresh (updated ${Math.round(timeSinceOurUpdate / 1000)} seconds ago by our app)`);
+  // First check our local timestamps
+  const localTimestamp = deviceLocationTimestamps[String(deviceId)];
+  if (localTimestamp) {
+    const timeSinceLocalUpdate = new Date().getTime() - localTimestamp;
+    const tenMinutesInMs = 10 * 60 * 1000;
+    
+    if (timeSinceLocalUpdate < tenMinutesInMs) {
+      console.log(`Device ${deviceId} location is fresh (updated ${Math.round(timeSinceLocalUpdate / 1000)} seconds ago locally)`);
       return true;
     }
   }
 
-  // Fall back to the device's reported location timestamp if needed
+  // Fall back to SimpleMDM timestamp if provided
   if (locationUpdatedAt) {
-    const locationTimestamp = new Date(locationUpdatedAt).getTime();
-    const timeSinceDeviceUpdate = currentTimestamp - locationTimestamp;
-    if (timeSinceDeviceUpdate <= fiveMinutesInMs) {
+    const deviceUpdateTime = new Date(locationUpdatedAt).getTime();
+    const now = new Date().getTime();
+    const timeSinceDeviceUpdate = now - deviceUpdateTime;
+    const tenMinutesInMs = 10 * 60 * 1000;
+
+    if (timeSinceDeviceUpdate < tenMinutesInMs) {
       console.log(`Device ${deviceId} location is fresh (reported ${Math.round(timeSinceDeviceUpdate / 1000)} seconds ago by SimpleMDM)`);
       return true;
     }
   }
 
-  console.log(`Device ${deviceId} location is stale (older than 5 minutes)`);
+  console.log(`Device ${deviceId} location is stale (older than 10 minutes)`);
   return false;
 };
 
@@ -104,40 +158,38 @@ const updateDeviceLocationTimestamp = (deviceId: string | number): void => {
   console.log(`Updated location timestamp for device ${deviceId}`);
 };
 
-// Find all policies that apply to a device at its current location
+// Find all policies that apply to a device - IMPORTANT: no longer uses device location for policy decisions
 export const findApplicablePolicies = (
   deviceId: string,
-  deviceLat: number,
-  deviceLng: number,
+  deviceIp: string | null | undefined,
   allPolicies: Policy[]
 ): Policy[] => {
-  // First check if this device is in any policy's locations
-  const applicablePolicies = allPolicies.filter(policy => {
-    // Skip if device is not in this policy's devices list
-    if (policy.devices.length > 0 && !policy.devices.some(d => d.id === deviceId)) {
-      return false;
-    }
-
-    // For non-default policies, check if device is in any of the policy's locations
-    if (!policy.isDefault) {
-      return policy.locations.some(location => 
-        isDeviceInLocation(deviceLat, deviceLng, location)
-      );
-    }
-
-    // Default policies are only applied if no other policy applies
-    return policy.isDefault;
-  });
-
-  // If we found applicable non-default policies, filter out the default ones
-  const nonDefaultPolicies = applicablePolicies.filter(p => !p.isDefault);
+  // First check direct device assignments (highest priority)
+  const deviceAssignedPolicies = allPolicies.filter(policy => 
+    !policy.isDefault && policy.devices.some(d => d.id === deviceId)
+  );
   
-  if (nonDefaultPolicies.length > 0) {
-    return nonDefaultPolicies;
+  if (deviceAssignedPolicies.length > 0) {
+    console.log(`Device ${deviceId} is directly assigned to ${deviceAssignedPolicies.length} policies`);
+    return deviceAssignedPolicies;
   }
-
-  // If no specific policy applies, return default policies
-  return applicablePolicies.filter(p => p.isDefault);
+  
+  // Next, check IP address matches (second priority)
+  if (deviceIp) {
+    const ipMatchedPolicies = allPolicies.filter(policy => 
+      !policy.isDefault && isDeviceIpInPolicyRange(deviceIp, policy)
+    );
+    
+    if (ipMatchedPolicies.length > 0) {
+      console.log(`Device ${deviceId} with IP ${deviceIp} matches ${ipMatchedPolicies.length} policies`);
+      return ipMatchedPolicies;
+    }
+  }
+  
+  // If no specific match, use default policies
+  const defaultPolicies = allPolicies.filter(p => p.isDefault);
+  console.log(`No specific policies matched for device ${deviceId}, using ${defaultPolicies.length} default policies`);
+  return defaultPolicies;
 };
 
 // Apply profiles from policies to a device
@@ -145,61 +197,49 @@ export const applyProfilesToDevice = async (
   device: Device,
   policies: Policy[]
 ): Promise<void> => {
-  // Skip if the device has no location data
-  if (
-    !device.attributes?.location_latitude || 
-    !device.attributes?.location_longitude
-  ) {
-    console.log(`Device ${device.id} has no location data, skipping profile application`);
-    return;
-  }
-
-  // Check if the device's location is fresh (less than 5 minutes old)
-  const isLocationCurrent = isLocationFresh(
-    device.id,
-    device.attributes.location_updated_at
-  );
+  // Get the device IP - this is now the primary method for policy matching
+  const deviceIp = device.attributes?.ip_address || device.ip_address;
   
-  const deviceLat = parseFloat(device.attributes.location_latitude);
-  const deviceLng = parseFloat(device.attributes.location_longitude);
-
-  if (isNaN(deviceLat) || isNaN(deviceLng)) {
-    console.log(`Device ${device.id} has invalid location data, skipping profile application`);
-    return;
-  }
-
-  // Find applicable policies based on whether the location is fresh
-  let applicablePolicies: Policy[];
+  // Get device ID
+  const deviceId = String(device.id);
   
-  if (isLocationCurrent) {
-    // Location is fresh, use normal policy assignment logic
-    applicablePolicies = findApplicablePolicies(
-      String(device.id),
-      deviceLat,
-      deviceLng,
-      policies
-    );
-  } else {
-    // Location is stale (older than 5 minutes), only use default policies
-    console.log(`Device ${device.id} location is older than 5 minutes, using default policies only`);
-    applicablePolicies = policies.filter(p => p.isDefault);
-  }
-
+  // Find applicable policies prioritizing IP matching
+  const applicablePolicies = findApplicablePolicies(deviceId, deviceIp, policies);
+  
   if (applicablePolicies.length === 0) {
-    console.log(`No applicable policies found for device ${device.id}`);
+    console.log(`No applicable policies found for device ${deviceId}`);
     return;
+  }
+  
+  // Log policy match reason for debugging
+  if (applicablePolicies.some(p => p.devices.some(d => d.id === deviceId))) {
+    console.log(`Policy applied based on direct device assignment`);
+  } else if (deviceIp && applicablePolicies.some(p => !p.isDefault)) {
+    console.log(`Policy applied based on IP address match: ${deviceIp}`);
+  } else {
+    console.log(`Policy applied based on default fallback`);
   }
 
   // Get all profiles from applicable policies
   const profilesToApply = applicablePolicies.flatMap(p => p.profiles);
+  
+  if (profilesToApply.length === 0) {
+    console.log(`No profiles to apply for device ${deviceId}`);
+    return;
+  }
+  
+  console.log(`Applying ${profilesToApply.length} profiles from ${applicablePolicies.length} policies to device ${deviceId}`);
 
   // Apply each profile to the device
   for (const profile of profilesToApply) {
     try {
-      console.log(`Applying profile ${profile.id} to device ${device.id}`);
-      await simplemdmApi.pushProfileToDevice(profile.id, device.id);
+      console.log(`Applying profile ${profile.id} to device ${deviceId}`);
+      await simplemdmApi.pushProfileToDevice(profile.id, deviceId);
+      
+      // Record this profile application
+      recordProfileApplication(deviceId, String(profile.id), applicablePolicies[0].id);
     } catch (error) {
-      console.error(`Failed to apply profile ${profile.id} to device ${device.id}:`, error);
+      console.error(`Failed to apply profile ${profile.id} to device ${deviceId}:`, error);
     }
   }
 };
@@ -224,11 +264,11 @@ const setPolicies = (policies: Policy[]): void => {
 
 // Handle a device location update and apply profiles if needed
 const handleDeviceLocationUpdate = async (device: Device): Promise<void> => {
-  if (!device || !device.latitude || !device.longitude) {
-    console.log(`Device has no location data, skipping profile application`);
+  if (!device) {
+    console.log(`No device provided, skipping profile application`);
     return;
   }
-
+  
   if (currentPolicies.length === 0) {
     console.log('No policies set, skipping profile application');
     return;
@@ -238,63 +278,191 @@ const handleDeviceLocationUpdate = async (device: Device): Promise<void> => {
     // Update our local timestamp for this device
     updateDeviceLocationTimestamp(device.id);
     
-    // Check if device location is fresh (less than 5 minutes old)
-    const isLocationCurrent = isLocationFresh(
-      device.id,
-      device.attributes?.location_updated_at
-    );
-    
-    // Find applicable policies based on location freshness
-    let applicablePolicies: Policy[];
-    
-    if (isLocationCurrent) {
-      // Location is fresh, use normal policy assignment logic
-      applicablePolicies = findApplicablePolicies(
-        String(device.id),
-        device.latitude,
-        device.longitude,
-        currentPolicies
-      );
-    } else {
-      // Location is stale (older than 5 minutes), only use default policies
-      console.log(`Device ${device.id} location is older than 5 minutes, using default policies only`);
-      applicablePolicies = currentPolicies.filter(p => p.isDefault);
-    }
-
-    if (applicablePolicies.length === 0) {
-      console.log(`No applicable policies found for device ${device.id}`);
-      return;
-    }
-
-    // Get all profiles from applicable policies
-    const profilesToApply = applicablePolicies.flatMap(p => p.profiles);
-
-    if (profilesToApply.length === 0) {
-      console.log(`No profiles to apply for device ${device.id}`);
-      return;
-    }
-
-    // Apply each profile to the device
-    for (const profile of profilesToApply) {
-      try {
-        console.log(`Applying profile ${profile.id} to device ${device.id}`);
-        await simplemdmApi.pushProfileToDevice(profile.id, device.id);
-      } catch (error) {
-        console.error(`Failed to apply profile ${profile.id} to device ${device.id}:`, error);
-      }
-    }
+    // Call applyProfilesToDevice with all necessary information
+    await applyProfilesToDevice(device, currentPolicies);
   } catch (error) {
     console.error(`Error handling device location update:`, error);
   }
 };
 
+// Process a device connection with IP address
+// This is the primary method for applying profiles based on IP address
+const processDeviceConnection = async (
+  deviceId: string,
+  ipAddress: string
+): Promise<{ 
+  policyApplied: boolean, 
+  policyName: string, 
+  profilesPushed: number,
+  profilesRemoved?: number  // New field to track removed profiles
+}> => {
+  if (currentPolicies.length === 0) {
+    console.log('No policies set, skipping profile application');
+    return { policyApplied: false, policyName: "", profilesPushed: 0 };
+  }
+  
+  try {
+    console.log(`Processing connection for device ${deviceId} with IP ${ipAddress}`);
+    
+    // Find policies that match this device directly
+    const directAssignedPolicies = currentPolicies.filter(policy => 
+      !policy.isDefault && policy.devices.some(d => d.id === deviceId)
+    );
+    
+    // Find policies that match by IP address
+    const ipMatchingPolicies = currentPolicies.filter(policy => 
+      !policy.isDefault && isDeviceIpInPolicyRange(ipAddress, policy)
+    );
+    
+    let activePolicy;
+    let matchReason = "";
+    
+    // Prioritize direct device assignment
+    if (directAssignedPolicies.length > 0) {
+      activePolicy = directAssignedPolicies[0];
+      matchReason = "direct device assignment";
+    }
+    // Then try IP-based matching
+    else if (ipMatchingPolicies.length > 0) {
+      activePolicy = ipMatchingPolicies[0];
+      matchReason = "IP address match";
+    }
+    // Fallback to default policy
+    else {
+      activePolicy = currentPolicies.find(p => p.isDefault);
+      matchReason = "default fallback";
+    }
+    
+    if (!activePolicy) {
+      console.log(`No applicable policy found for device ${deviceId}`);
+      return { policyApplied: false, policyName: "", profilesPushed: 0 };
+    }
+    
+    console.log(`Selected policy "${activePolicy.name}" for device ${deviceId} based on ${matchReason}`);
+    
+    // NEW CODE: Handle profile cleanup
+    // Check for profiles that were applied by other policies (not the active one)
+    // and remove them since they no longer apply
+    const profilesRemoved = await removeOutdatedProfiles(deviceId, activePolicy.id);
+    
+    // Get profiles from the active policy
+    const profilesToApply = activePolicy.profiles;
+    
+    if (profilesToApply.length === 0) {
+      console.log(`No profiles to apply for device ${deviceId} from policy ${activePolicy.name}`);
+      return { 
+        policyApplied: true, 
+        policyName: activePolicy.name, 
+        profilesPushed: 0,
+        profilesRemoved 
+      };
+    }
+    
+    // Apply each profile
+    let profilesApplied = 0;
+    for (const profile of profilesToApply) {
+      try {
+        console.log(`Applying profile ${profile.id} (${profile.name}) to device ${deviceId} from policy ${activePolicy.name}`);
+        await simplemdmApi.pushProfileToDevice(profile.id, deviceId);
+        profilesApplied++;
+        
+        // Record this profile application
+        recordProfileApplication(deviceId, String(profile.id), activePolicy.id);
+      } catch (error) {
+        console.error(`Failed to apply profile ${profile.id} to device ${deviceId}:`, error);
+      }
+    }
+    
+    console.log(`Successfully applied ${profilesApplied} profiles to device ${deviceId}`);
+    
+    return { 
+      policyApplied: true, 
+      policyName: activePolicy.name, 
+      profilesPushed: profilesApplied,
+      profilesRemoved
+    };
+  } catch (error) {
+    console.error(`Error processing device connection:`, error);
+    return { policyApplied: false, policyName: "", profilesPushed: 0 };
+  }
+};
+
+// NEW FUNCTION: Record when a profile is applied to a device
+const recordProfileApplication = (deviceId: string, profileId: string, policyId: string): void => {
+  // Initialize the device's profile array if it doesn't exist
+  if (!deviceProfilesMap[deviceId]) {
+    deviceProfilesMap[deviceId] = [];
+  }
+  
+  // Check if this profile is already recorded
+  const existingRecord = deviceProfilesMap[deviceId].find(record => 
+    record.profileId === profileId && record.policyId === policyId
+  );
+  
+  if (existingRecord) {
+    // Update the timestamp
+    existingRecord.appliedAt = Date.now();
+  } else {
+    // Add a new record
+    deviceProfilesMap[deviceId].push({
+      profileId,
+      policyId,
+      appliedAt: Date.now()
+    });
+  }
+  
+  console.log(`Recorded profile ${profileId} application to device ${deviceId} by policy ${policyId}`);
+};
+
+// NEW FUNCTION: Remove profiles that were applied by different policies
+const removeOutdatedProfiles = async (deviceId: string, currentPolicyId: string): Promise<number> => {
+  // If we don't have any record for this device, there's nothing to remove
+  if (!deviceProfilesMap[deviceId]) {
+    return 0;
+  }
+  
+  // Find profiles that were applied by other policies
+  const outdatedProfiles = deviceProfilesMap[deviceId].filter(record => 
+    record.policyId !== currentPolicyId
+  );
+  
+  if (outdatedProfiles.length === 0) {
+    console.log(`No outdated profiles to remove from device ${deviceId}`);
+    return 0;
+  }
+  
+  console.log(`Found ${outdatedProfiles.length} outdated profiles to remove from device ${deviceId}`);
+  
+  // Remove each outdated profile
+  let removedCount = 0;
+  for (const record of outdatedProfiles) {
+    try {
+      console.log(`Removing profile ${record.profileId} from device ${deviceId} (applied by policy ${record.policyId})`);
+      await simplemdmApi.removeProfileFromDevice(record.profileId, deviceId);
+      removedCount++;
+      
+      // Remove this record from the device's profile array
+      deviceProfilesMap[deviceId] = deviceProfilesMap[deviceId].filter(r => 
+        !(r.profileId === record.profileId && r.policyId === record.policyId)
+      );
+    } catch (error) {
+      console.error(`Failed to remove profile ${record.profileId} from device ${deviceId}:`, error);
+    }
+  }
+  
+  console.log(`Successfully removed ${removedCount} outdated profiles from device ${deviceId}`);
+  return removedCount;
+};
+
 export default {
   calculateDistance,
   isDeviceInLocation,
+  isDeviceIpInPolicyRange,
   findApplicablePolicies,
   applyProfilesToDevice,
   checkAndApplyProfilesForDevice,
   setPolicies,
   handleDeviceLocationUpdate,
-  updateDeviceLocationTimestamp  // Export the new function
+  updateDeviceLocationTimestamp,
+  processDeviceConnection
 };

@@ -56,15 +56,15 @@ const DeviceMap = ({ policies = [] }: DeviceMapProps) => {
     }
   }, [devicesData, policies]);
 
-  // Add auto-refresh effect to update device locations every 5 minutes
+  // Add auto-refresh effect to update device locations every 10 minutes
   useEffect(() => {
     // Start the auto-refresh interval when the component mounts
     if (refreshIntervalRef.current === null) {
-      console.log('Setting up automatic location refresh every 5 minutes');
+      console.log('Setting up automatic location refresh every 10 minutes');
       refreshIntervalRef.current = setInterval(() => {
         console.log('Auto-refreshing device locations');
         handleRefreshLocations();
-      }, 5 * 60 * 1000); // 5 minutes in milliseconds
+      }, 10 * 60 * 1000); // 10 minutes in milliseconds
     }
     
     // Clean up the interval when the component unmounts

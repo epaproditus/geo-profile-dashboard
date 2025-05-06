@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useContext, useEffect } from "react";
 import AuthCheck from "@/components/AuthCheck";
 import Navbar from "@/components/Navbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MapPin, MoreVertical, RefreshCw, Search, Smartphone } from "lucide-react";
+import { MapPin, MoreVertical, RefreshCw, Search, Smartphone, Wifi, Activity } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import profilePolicyService from "@/lib/services/profile-policy-service";
 import { useDevices, useUpdateDeviceLocation } from "@/hooks/use-simplemdm";
 import { format } from "date-fns";
 import DeviceMap from "@/components/DeviceMap";
@@ -41,6 +44,25 @@ const Devices = () => {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const { data: devicesData, isLoading, isError, refetch } = useDevices({ limit: 50 });
   const updateDeviceLocation = useUpdateDeviceLocation();
+
+  // State to track IP monitoring
+  const [ipMonitoringActive, setIpMonitoringActive] = useState(false);
+  const { toast } = useToast();
+  
+  // Check if IP monitoring is active (simplified version that could be replaced with a context)
+  useEffect(() => {
+    // We consider monitoring active if there's stored device history
+    const history = profilePolicyService.loadDevicePolicyHistory();
+    setIpMonitoringActive(history.length > 0);
+    
+    // Set up an interval to check if monitoring is still active
+    const checkInterval = setInterval(() => {
+      const updatedHistory = profilePolicyService.loadDevicePolicyHistory();
+      setIpMonitoringActive(updatedHistory.length > 0);
+    }, 5000);
+    
+    return () => clearInterval(checkInterval);
+  }, []);
 
   // Function to handle refreshing a device's location
   const handleUpdateLocation = (deviceId: number | string) => {
@@ -100,7 +122,14 @@ const Devices = () => {
         <main className="flex-1 container mx-auto p-4 md:p-6">
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold">Devices</h1>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              {ipMonitoringActive && (
+                <Badge variant="outline" className="border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 flex items-center gap-1.5 mr-2">
+                  <Activity className="h-3 w-3 animate-pulse" />
+                  <Wifi className="h-3.5 w-3.5" />
+                  Network Monitoring Active
+                </Badge>
+              )}
               <div className="border rounded-md overflow-hidden flex">
                 <Button 
                   variant={viewMode === "list" ? "default" : "ghost"} 

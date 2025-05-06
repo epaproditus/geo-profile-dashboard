@@ -50,6 +50,7 @@
     "express": "^5.1.0",
     "http-proxy-middleware": "^3.0.5",
     "input-otp": "^1.2.4",
+    "ipaddr.js": "^2.2.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.503.0",
     "mapbox-gl": "^3.11.1",
@@ -83,6 +84,8 @@
     "lovable-tagger": "^1.1.7",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.11",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
     "vite": "^5.4.1"

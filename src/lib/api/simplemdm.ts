@@ -250,16 +250,25 @@ export const simplemdmApi = {
     }
   },
 
-  // Request device location update using the general devices endpoint
+  // Request device location update
   async updateDeviceLocation(deviceId: number | string) {
     try {
-      // Use the general device endpoint instead of lost mode
-      const response = await apiClient.get<SimpleMDMResponse<SimpleMDMDevice>>(`/devices/${deviceId}`);
+      // Use the proper location update endpoint to request a fresh location from the device
+      await apiClient.post(`/devices/${deviceId}/lost_mode/update_location`);
       
       // Update timestamp for this device when we explicitly request a location update
       locationProfileService.updateDeviceLocationTimestamp(deviceId);
       
-      return response.data;
+      // Return the current device data. Location updates may take time to complete.
+      // The device will send its location data asynchronously, so we need to fetch
+      // again later to get the updated location.
+      const response = await this.getDevice(deviceId);
+      
+      return {
+        ...response,
+        // Add a flag to indicate that a location update was requested
+        locationUpdateRequested: true
+      };
     } catch (error) {
       console.error(`Error updating location for device ${deviceId}:`, error);
       throw error;
@@ -350,6 +359,39 @@ export const simplemdmApi = {
       return response.data;
     } catch (error) {
       console.error(`Error pushing profile ${profileId} to device ${deviceId}:`, error);
+      throw error;
+    }
+  },
+
+  // Get all profiles installed on a specific device
+  async getDeviceProfiles(deviceId: number | string) {
+    try {
+      const response = await apiClient.get<SimpleMDMListResponse<SimpleMDMProfile>>(`/devices/${deviceId}/profiles`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching profiles for device ${deviceId}:`, error);
+      throw error;
+    }
+  },
+  
+  // Check if a specific profile is installed on a device
+  async isProfileInstalledOnDevice(profileId: number | string, deviceId: number | string): Promise<boolean> {
+    try {
+      const profiles = await this.getDeviceProfiles(deviceId);
+      return profiles.data.some(profile => profile.id.toString() === profileId.toString());
+    } catch (error) {
+      console.error(`Error checking if profile ${profileId} is installed on device ${deviceId}:`, error);
+      return false; // Assume not installed if there's an error
+    }
+  },
+  
+  // Remove a profile from a specific device
+  async removeProfileFromDevice(profileId: number | string, deviceId: number | string) {
+    try {
+      const response = await apiClient.delete(`/profiles/${profileId}/devices/${deviceId}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error removing profile ${profileId} from device ${deviceId}:`, error);
       throw error;
     }
   }

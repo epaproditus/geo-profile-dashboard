@@ -27,13 +27,14 @@ export const useUpdateDeviceLocation = () => {
   return useMutation({
     mutationFn: (deviceId: number | string) => 
       simplemdmApi.updateDeviceLocation(deviceId),
+    // We'll remove the onSuccess toast since we're now handling this in the Dashboard component
+    // This avoids showing duplicate toasts to the user
     onSuccess: (_data, deviceId) => {
       // Invalidate the device query to refetch with updated location
       queryClient.invalidateQueries({ queryKey: ['device', deviceId] });
-      toast({
-        title: "Location Update Requested",
-        description: "Device location update has been requested. It may take a moment to receive the new location.",
-      });
+      
+      // Also invalidate the devices list query to refresh the dashboard
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
     },
     onError: (error: any) => {
       toast({

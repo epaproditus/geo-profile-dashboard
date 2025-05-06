@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import AuthCheck from "@/components/AuthCheck";
 import Navbar from "@/components/Navbar";
 import Map from "@/components/Map";
@@ -6,13 +6,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow, differenceInMinutes } from "date-fns";
-import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle, MapPinOff } from "lucide-react";
+import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle, MapPinOff, Wifi } from "lucide-react";
 import { useDevices, useUpdateDeviceLocation } from "@/hooks/use-simplemdm";
 import { Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { isIpInRange } from "@/lib/utils";
+import { getLocationFromIp, getLocationFromIpSync, GeoLocation } from "@/lib/utils/ip-geolocation";
+import profilePolicyService from "@/lib/services/profile-policy-service";
 
 // Constants for localStorage keys and location staleness
 const POLICY_STORAGE_KEY = 'geo-profile-dashboard-policies';
-const LOCATION_STALENESS_MINUTES = 5; // Location data is considered stale after 5 minutes
+const LOCATION_STALENESS_MINUTES = 10; // Location data is considered stale after 10 minutes
 
 // Type definitions for policies, matching Geofences.tsx
 interface ZonePolicy {
@@ -25,6 +29,11 @@ interface ZonePolicy {
     latitude: number;
     longitude: number;
     radius: number;
+    geofenceId: string;
+  }[];
+  ipRanges?: {
+    displayName: string;
+    ipAddress: string;  // Can be single IP or CIDR notation like "192.168.1.0/24"
     geofenceId: string;
   }[];
   devices: {
@@ -71,33 +80,30 @@ const defaultPolicies: ZonePolicy[] = [
   }
 ];
 
-// Helper function to determine if a device is within a policy's location
-const isDeviceWithinPolicyLocation = (deviceLat: number, deviceLng: number, policy: ZonePolicy): boolean => {
+// Helper function to determine if a device is within a policy's location - FOCUS ON IP
+const isDeviceWithinPolicyLocation = (deviceIp: string | null, policy: ZonePolicy): boolean => {
   if (policy.isDefault) return false; // Default policy doesn't match by location
   
-  // Check all locations for this policy
-  return policy.locations.some(location => {
-    if (location.radius === 0) return false; // Skip default location with radius 0
-    
-    // Calculate distance between device and policy location (haversine formula)
-    const lat1 = deviceLat;
-    const lon1 = deviceLng;
-    const lat2 = location.latitude;
-    const lon2 = location.longitude;
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = lat1 * Math.PI/180;
-    const φ2 = lat2 * Math.PI/180;
-    const Δφ = (lat2-lat1) * Math.PI/180;
-    const Δλ = (lon2-lon1) * Math.PI/180;
+  // Check if device's IP matches any policy's IP ranges
+  if (deviceIp && policy.ipRanges && policy.ipRanges.length > 0) {
+    return policy.ipRanges.some(ipRange => {
+      if (!ipRange.ipAddress) return false;
+      const matches = isIpInRange(deviceIp, ipRange.ipAddress);
+      console.log(`Checking if ${deviceIp} matches ${ipRange.ipAddress}: ${matches ? 'Yes' : 'No'}`);
+      return matches;
+    });
+  }
+  
+  return false;
+};
 
-    const a = 
-      Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-      Math.cos(φ1) * Math.cos(φ2) *
-      Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distance = R * c;
-
-    return distance <= location.radius;
+// Helper function to check if device's IP matches a policy's IP ranges
+const isDeviceIpInPolicyRange = (deviceIp: string | null, policy: ZonePolicy): boolean => {
+  if (!deviceIp || !policy.ipRanges || policy.ipRanges.length === 0) return false;
+  
+  return policy.ipRanges.some(ipRange => {
+    if (!ipRange.ipAddress) return false;
+    return isIpInRange(deviceIp, ipRange.ipAddress);
   });
 };
 
@@ -108,49 +114,147 @@ const isLocationStale = (locationTimestamp: Date): boolean => {
   return minutesOld > LOCATION_STALENESS_MINUTES;
 };
 
-// Helper function to get the active policy for a device
+// Helper function to get the active policy for a device - PRIORITIZE IP MATCHING
 const getActivePolicyForDevice = (
-  deviceLat: number, 
-  deviceLng: number, 
-  deviceId: string, 
-  policies: ZonePolicy[],
-  locationTimestamp: Date | null
+  deviceData: {
+    id: string;
+    lastSeenIp?: string | null;
+  }, 
+  policies: ZonePolicy[]
 ): ZonePolicy | undefined => {
-  // If location is stale or missing, always return the default policy
-  if (!locationTimestamp || isLocationStale(locationTimestamp)) {
-    return policies.find(p => p.isDefault);
+  const { id: deviceId, lastSeenIp } = deviceData;
+  
+  // REVISED PRIORITY: First check if device IP matches any policy's IP addresses
+  if (lastSeenIp) {
+    const ipBasedPolicies = policies.filter(p => 
+      !p.isDefault && isDeviceWithinPolicyLocation(lastSeenIp, p)
+    );
+    
+    if (ipBasedPolicies.length > 0) {
+      console.log(`Device ${deviceId} matched policy ${ipBasedPolicies[0].name} by IP address`);
+      // Return the first matching IP-based policy
+      return ipBasedPolicies[0];
+    }
   }
   
-  // First check if device is assigned to policies directly
+  // Next check if device is assigned to policies directly (second priority)
   const assignedPolicies = policies.filter(p => 
     p.devices.some(d => d.id === deviceId)
   );
   
   if (assignedPolicies.length > 0) {
+    console.log(`Device ${deviceId} matched policy ${assignedPolicies[0].name} by direct assignment`);
     // If device is assigned to a policy directly, return the first one
-    // (In a real app, you would need logic to prioritize policies)
     return assignedPolicies[0];
   }
   
-  // If device isn't assigned directly, check location-based policies
-  const locationPolicies = policies.filter(p => 
-    !p.isDefault && isDeviceWithinPolicyLocation(deviceLat, deviceLng, p)
-  );
-  
-  if (locationPolicies.length > 0) {
-    // Return the first matching location policy
-    // (In a real app, you would need logic to prioritize policies)
-    return locationPolicies[0];
-  }
-  
-  // If no location-based policies match, return the default policy
-  return policies.find(p => p.isDefault);
+  // If no match is found, return the default policy
+  const defaultPolicy = policies.find(p => p.isDefault);
+  console.log(`Device ${deviceId} using default policy ${defaultPolicy?.name}`);
+  return defaultPolicy;
 };
 
 const Dashboard = () => {
   const [policies, setPolicies] = useState<ZonePolicy[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [refreshingLocation, setRefreshingLocation] = useState<string | false>(false);
+  const { toast } = useToast(); // Use the useToast hook
+  
+  // Store device IP addresses to detect changes
+  const [deviceIpMap, setDeviceIpMap] = useState<Record<string, string>>({});
+  
+  // Polling interval reference for cleanup
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Configure how often we check for IP changes (in milliseconds)
+  const IP_CHECK_INTERVAL_MS = 30000; // Check every 30 seconds
+  
+  // Show monitoring status in the Dashboard
+  const [ipMonitoringActive, setIpMonitoringActive] = useState(false);
+  
+  // Check if IP monitoring is running
+  useEffect(() => {
+    // Check if we have an active interval for IP monitoring
+    const isActive = pollingIntervalRef.current !== null;
+    setIpMonitoringActive(isActive);
+  }, [pollingIntervalRef.current]);
+  
+  // Function to toggle IP monitoring on/off
+  const toggleIpMonitoring = () => {
+    if (ipMonitoringActive && pollingIntervalRef.current) {
+      // Turn off monitoring
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+      setIpMonitoringActive(false);
+      
+      toast({
+        title: "Network Monitoring Disabled",
+        description: "Real-time network monitoring has been turned off.",
+        duration: 3000,
+      });
+    } else {
+      // Turn on monitoring
+      pollingIntervalRef.current = setInterval(async () => {
+        console.log('Checking for IP address changes...');
+        
+        // Fetch fresh device data
+        const freshData = await refetchDevices();
+        
+        if (!freshData.data?.data) {
+          console.log('No device data available in refresh');
+          return;
+        }
+        
+        // Check each device for IP changes
+        for (const device of freshData.data.data) {
+          const deviceId = device.id.toString();
+          const currentIp = device.attributes.last_seen_ip;
+          const previousIp = deviceIpMap[deviceId];
+          
+          // Skip devices without an IP
+          if (!currentIp) continue;
+          
+          // Check if the IP has changed
+          if (currentIp !== previousIp) {
+            console.log(`Device ${deviceId} (${device.attributes.name}) IP changed from ${previousIp || 'none'} to ${currentIp}`);
+            
+            // Update the stored IP
+            setDeviceIpMap(prev => ({
+              ...prev,
+              [deviceId]: currentIp
+            }));
+            
+            try {
+              // Process this device with the new IP
+              const result = await profilePolicyService.processDeviceConnection(
+                deviceId, 
+                currentIp
+              );
+              
+              // If profiles were pushed, show a toast notification
+              if (result.policyApplied) {
+                toast({
+                  title: "Network Change Detected",
+                  description: `Applied ${result.profilesPushed} profile(s) from "${result.policyName}" policy to device "${device.attributes.name}" based on new IP address.`,
+                  duration: 5000,
+                });
+              }
+            } catch (error) {
+              console.error(`Error processing device ${deviceId} IP change:`, error);
+            }
+          }
+        }
+      }, IP_CHECK_INTERVAL_MS);
+      
+      setIpMonitoringActive(true);
+      
+      toast({
+        title: "Network Monitoring Enabled",
+        description: `Monitoring enabled. Checking device networks every ${IP_CHECK_INTERVAL_MS/1000} seconds.`,
+        duration: 3000,
+      });
+    }
+  };
   
   // Use the SimpleMDM API hooks to get real device data
   const { 
@@ -168,30 +272,200 @@ const Dashboard = () => {
     setPolicies(loadPoliciesFromLocalStorage());
   }, []);
   
+  // Add effect to check for policy application when devices connect
+  useEffect(() => {
+    // Only run if we have device data and policies loaded
+    if (!devicesData?.data || policies.length === 0) return;
+    
+    // Process each device to see if profiles need to be pushed
+    const processDevices = async () => {
+      for (const device of devicesData.data) {
+        const deviceId = device.id.toString();
+        const deviceIp = device.attributes.last_seen_ip;
+        
+        // Skip devices without an IP address
+        if (!deviceIp) continue;
+        
+        try {
+          // Process this device connection to apply the appropriate policy
+          const result = await profilePolicyService.processDeviceConnection(
+            deviceId, 
+            deviceIp
+          );
+          
+          // If profiles were pushed, show a toast notification
+          if (result.policyApplied) {
+            toast({
+              title: "Profiles Applied",
+              description: `Applied ${result.profilesPushed} profile(s) from "${result.policyName}" policy to device "${device.attributes.name}" based on IP address.`,
+              duration: 5000,
+            });
+          }
+        } catch (error) {
+          console.error(`Error processing device ${deviceId} connection:`, error);
+        }
+      }
+    };
+    
+    // Process devices
+    processDevices();
+    
+    // We only want to run this when the deviceData or policies change
+  }, [devicesData?.data, policies, toast]);
+  
+  // Add effect to continuously monitor device IP addresses
+  useEffect(() => {
+    // Only run if we have device data and policies loaded
+    if (!devicesData?.data || policies.length === 0) return;
+    
+    // Initial processing of devices
+    const processInitialDeviceData = async () => {
+      // Create a map of current IP addresses
+      const newDeviceIpMap: Record<string, string> = {};
+      
+      // Process each device
+      for (const device of devicesData.data) {
+        const deviceId = device.id.toString();
+        const deviceIp = device.attributes.last_seen_ip;
+        
+        if (deviceIp) {
+          // Store the current IP for later comparison
+          newDeviceIpMap[deviceId] = deviceIp;
+        }
+      }
+      
+      // Update the IP map
+      setDeviceIpMap(newDeviceIpMap);
+    };
+    
+    // Process initial device data
+    processInitialDeviceData();
+    
+    // Start polling for IP address changes
+    pollingIntervalRef.current = setInterval(async () => {
+      console.log('Checking for IP address changes...');
+      
+      // Fetch fresh device data
+      const freshData = await refetchDevices();
+      
+      if (!freshData.data?.data) {
+        console.log('No device data available in refresh');
+        return;
+      }
+      
+      // Check each device for IP changes
+      for (const device of freshData.data.data) {
+        const deviceId = device.id.toString();
+        const currentIp = device.attributes.last_seen_ip;
+        const previousIp = deviceIpMap[deviceId];
+        
+        // Skip devices without an IP
+        if (!currentIp) continue;
+        
+        // Check if the IP has changed
+        if (currentIp !== previousIp) {
+          console.log(`Device ${deviceId} (${device.attributes.name}) IP changed from ${previousIp || 'none'} to ${currentIp}`);
+          
+          // Update the stored IP
+          setDeviceIpMap(prev => ({
+            ...prev,
+            [deviceId]: currentIp
+          }));
+          
+          try {
+            // Process this device with the new IP
+            const result = await profilePolicyService.processDeviceConnection(
+              deviceId, 
+              currentIp
+            );
+            
+            // Show a toast notification based on what happened
+            if (result.policyApplied) {
+              // Create a more detailed notification that includes profile removals
+              let description = `Applied ${result.profilesPushed} profile(s) from "${result.policyName}" policy to device "${device.attributes.name}"`;
+              
+              // Add info about removed profiles if any were removed
+              if (result.profilesRemoved && result.profilesRemoved > 0) {
+                description += ` and removed ${result.profilesRemoved} outdated profile(s)`;
+              }
+              
+              description += ` based on new IP address.`;
+              
+              toast({
+                title: "Network Change Detected",
+                description: description,
+                duration: 5000,
+              });
+            }
+          } catch (error) {
+            console.error(`Error processing device ${deviceId} IP change:`, error);
+          }
+        }
+      }
+    }, IP_CHECK_INTERVAL_MS);
+    
+    // Clean up interval on component unmount
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [devicesData?.data, policies, toast, refetchDevices]);
+  
+  // Add a manual refresh button to sync UI with actual policy status
+  const handleManualRefresh = async () => {
+    // Force refresh the device data
+    await refetchDevices();
+    
+    // Reload policies from localStorage (in case they were updated elsewhere)
+    setPolicies(loadPoliciesFromLocalStorage());
+    
+    toast({
+      title: "Dashboard Refreshed",
+      description: "Device and policy information has been updated.",
+      duration: 3000,
+    });
+  };
+
   // Format devices from the API response
   const formattedDevices = devicesData?.data?.map(device => {
-    // Extract location data
+    // Extract IP address data - primary location method now
+    const lastSeenIp = device.attributes.last_seen_ip || null;
+    
+    // We're still extracting location data, but only for display purposes on the map
     const hasLocation = device.attributes.location_latitude && device.attributes.location_longitude;
     const latitude = hasLocation ? parseFloat(device.attributes.location_latitude || '0') : undefined;
     const longitude = hasLocation ? parseFloat(device.attributes.location_longitude || '0') : undefined;
     const locationTimestamp = device.attributes.location_updated_at ? new Date(device.attributes.location_updated_at) : null;
     
-    // Check if location is stale
-    const isStaleLocation = locationTimestamp ? isLocationStale(locationTimestamp) : true;
+    // Determine active policy using only IP address and direct assignment
+    const activePolicyObj = getActivePolicyForDevice(
+      {
+        id: device.id.toString(),
+        lastSeenIp
+      },
+      policies
+    );
+
+    // Determine the matching reason for the policy
+    let policyMatchReason: 'direct' | 'ip' | 'default' = 'default';
+    if (activePolicyObj && !activePolicyObj.isDefault) {
+      if (activePolicyObj.devices.some(d => d.id === device.id.toString())) {
+        policyMatchReason = 'direct';
+      } else if (lastSeenIp && activePolicyObj.ipRanges && 
+                isDeviceIpInPolicyRange(lastSeenIp, activePolicyObj)) {
+        policyMatchReason = 'ip';
+      }
+    }
     
-    // Determine active policy if location is available
-    let activePolicy = undefined;
-    if (hasLocation && latitude && longitude) {
-      activePolicy = getActivePolicyForDevice(
-        latitude, 
-        longitude, 
-        device.id.toString(), 
-        policies,
-        locationTimestamp
-      )?.id;
-    } else {
-      // No location data, use default policy
-      activePolicy = policies.find(p => p.isDefault)?.id;
+    // Determine IP network name if policy is matched by IP
+    let ipNetworkName = '';
+    if (policyMatchReason === 'ip' && lastSeenIp && activePolicyObj?.ipRanges) {
+      const matchingIpRange = activePolicyObj.ipRanges.find(range => 
+        isIpInRange(lastSeenIp, range.ipAddress)
+      );
+      ipNetworkName = matchingIpRange?.displayName || '';
     }
     
     return {
@@ -203,47 +477,110 @@ const Dashboard = () => {
       battery: device.attributes.battery_level ? `${device.attributes.battery_level}` : 'Unknown',
       online: device.attributes.status === 'enrolled',
       last_seen: device.attributes.last_seen_at ? new Date(device.attributes.last_seen_at) : new Date(),
+      lastSeenIp,
+      // We still include location for map display
       location: hasLocation ? {
         latitude: latitude!,
         longitude: longitude!,
         accuracy: device.attributes.location_accuracy || 0,
         last_updated: locationTimestamp || new Date(),
-        is_stale: isStaleLocation
+        is_stale: isLocationStale(locationTimestamp!)
       } : undefined,
-      activePolicy,
-      sharingLocation: hasLocation && !isStaleLocation
+      activePolicy: activePolicyObj?.id,
+      activePolicyObj,
+      policyMatchReason,
+      ipNetworkName
     };
   }) || [];
   
   // Format the map data for the Map component
   const mapData = {
-    // Format geofences from policies
-    geofences: policies.flatMap(policy => 
-      policy.locations.map(loc => ({
-        id: loc.geofenceId,
-        name: `${policy.name}: ${loc.displayName}`,
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        radius: loc.radius,
-        color: policy.id === "default-policy" ? "#3b82f6" : policy.id.includes("office") ? "#10b981" : "#f97316",
-        borderColor: policy.id === "default-policy" ? "#2563eb" : policy.id.includes("office") ? "#059669" : "#ea580c",
-        profileId: null,
-        zonePolicyId: policy.id
-      }))
-    ).filter(g => g.radius > 0), // Filter out default policy with radius 0
+    // Format geofences for policy boundaries - use IP-based locations where available
+    geofences: [
+      // Add IP-based policy locations 
+      ...policies.flatMap(policy => 
+        (policy.ipRanges || []).map(ipRange => {
+          // Get geographic location from IP address
+          const ipLocation = getLocationFromIp(ipRange.ipAddress);
+          if (!ipLocation) return null;
+          
+          return {
+            id: ipRange.geofenceId,
+            name: `${policy.name}: ${ipRange.displayName} (IP Network)`,
+            latitude: ipLocation.latitude,
+            longitude: ipLocation.longitude,
+            radius: ipLocation.accuracy || 100, // Use accuracy from IP geolocation or default to 100m
+            color: "#2563eb", // Blue color for IP-based locations
+            borderColor: "#1e40af", // Darker blue for borders
+            profileId: null,
+            zonePolicyId: policy.id
+          };
+        }).filter(Boolean)
+      ),
+      // Keep existing policy locations for reference (legacy)
+      ...policies.flatMap(policy => 
+        policy.locations.map(loc => ({
+          id: loc.geofenceId,
+          name: `${policy.name}: ${loc.displayName}`,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          radius: loc.radius,
+          color: policy.id === "default-policy" ? "#3b82f680" : policy.id.includes("office") ? "#10b98180" : "#f9731680", // Semi-transparent
+          borderColor: policy.id === "default-policy" ? "#2563eb80" : policy.id.includes("office") ? "#05966980" : "#ea580c80", // Semi-transparent
+          profileId: null,
+          zonePolicyId: policy.id
+        }))
+      ).filter(g => g.radius > 0), // Filter out default policy with radius 0
+    ],
     
-    // Format devices for the map - only show devices with non-stale location data
-    devices: formattedDevices
-      .filter(device => device.location && !device.location.is_stale)
-      .map(device => ({
-        id: device.id,
-        name: device.name,
-        latitude: device.location!.latitude,
-        longitude: device.location!.longitude,
-        profileId: null,
-        model: device.model,
-        lastSeen: device.last_seen.toISOString()
-      }))
+    // Format devices for the map - use IP location when available, fall back to GPS
+    devices: formattedDevices.map(device => {
+      // Always try to get location from IP first, even if GPS is available
+      if (device.lastSeenIp) {
+        const ipLocation = getLocationFromIp(device.lastSeenIp);
+        
+        if (ipLocation && ipLocation.latitude && ipLocation.longitude) {
+          // Add more visual information to identify this as an IP-based location
+          return {
+            id: device.id,
+            name: device.name,
+            displayName: `${device.name} (Network Location)`,
+            latitude: ipLocation.latitude,
+            longitude: ipLocation.longitude,
+            profileId: null,
+            model: device.model,
+            lastSeen: device.last_seen.toISOString(),
+            locationType: 'ip', // Mark as IP-based location
+            color: getIpBasedColor(device.lastSeenIp), // Get a consistent color based on the IP
+            ipAddress: device.lastSeenIp,
+            accuracy: ipLocation.accuracy || 3000, // Radius of accuracy circle in meters
+            // Include matched policy info for tooltip
+            policyName: device.activePolicyObj?.name,
+            ipNetworkName: device.ipNetworkName
+          };
+        }
+      }
+      
+      // Fall back to GPS location if available and not stale
+      if (device.location && !device.location.is_stale) {
+        return {
+          id: device.id,
+          name: device.name,
+          displayName: `${device.name} (GPS)`,
+          latitude: device.location.latitude,
+          longitude: device.location.longitude,
+          profileId: null,
+          model: device.model,
+          lastSeen: device.last_seen.toISOString(),
+          locationType: 'gps', // Mark as GPS location
+          color: '#FF3333', // Red for GPS locations
+          accuracy: device.location.accuracy || 10 // GPS is usually more accurate
+        };
+      }
+      
+      // No valid location available
+      return null;
+    }).filter(Boolean) // Remove null entries
   };
   
   // Calculate map center based on the following priority:
@@ -262,9 +599,18 @@ const Dashboard = () => {
     
     try {
       // Use the real API to update location
-      await updateDeviceLocation.mutateAsync(deviceId);
+      const response = await updateDeviceLocation.mutateAsync(deviceId);
       
-      // Wait a moment for the updates to process on the MDM server
+      // Check if the location update was requested
+      if (response.locationUpdateRequested) {
+        toast({
+          title: "Location Update Requested",
+          description: "The location update request has been sent to the device. It may take a few moments for the device to respond and update its location.",
+          duration: 10000, // Show for 10 seconds
+        });
+      }
+      
+      // Wait a moment and then refetch to see if there's updated data
       setTimeout(() => {
         refetchDevices();
         setRefreshingLocation(false);
@@ -272,6 +618,13 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error updating device location:', error);
       setRefreshingLocation(false);
+      
+      // Show error toast
+      toast({
+        title: "Location Update Failed",
+        description: "Failed to request device location update. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -284,6 +637,14 @@ const Dashboard = () => {
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold">Dashboard</h1>
             <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleManualRefresh}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Dashboard
+              </Button>
               <Button variant="outline" size="sm" asChild>
                 <a href="/geofences">
                   <MapPin className="h-4 w-4 mr-2" />
@@ -295,6 +656,23 @@ const Dashboard = () => {
                   <Smartphone className="h-4 w-4 mr-2" />
                   Devices
                 </a>
+              </Button>
+              <Button 
+                variant={ipMonitoringActive ? "destructive" : "outline"} 
+                size="sm" 
+                onClick={toggleIpMonitoring}
+              >
+                {ipMonitoringActive ? (
+                  <>
+                    <Wifi className="h-4 w-4 mr-2" />
+                    Stop Monitoring
+                  </>
+                ) : (
+                  <>
+                    <Wifi className="h-4 w-4 mr-2" />
+                    Start Monitoring
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -361,6 +739,7 @@ const Dashboard = () => {
                               </CardHeader>
                               <CardContent className="p-3 pt-0">
                                 <div className="mt-2 space-y-2">
+                                  {/* Policy Name Section */}
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-1.5">
                                       <Shield className="h-3.5 w-3.5" style={{ color: borderColor }} />
@@ -368,73 +747,64 @@ const Dashboard = () => {
                                     </div>
                                     <Badge 
                                       className="text-[10px]" 
-                                      variant={
-                                        !device.location ? "outline" :
-                                        device.location.is_stale ? "secondary" :
-                                        activePolicy?.isDefault ? "secondary" : "default"
-                                      }
+                                      variant={device.policyMatchReason === 'ip' ? "default" : "secondary"}
                                     >
-                                      {!device.location ? "No Location" :
-                                       device.location.is_stale ? "Stale Location" :
-                                       activePolicy?.isDefault ? "Default" : "Location-based"}
+                                      {device.policyMatchReason === 'ip' ? "Network-based" : 
+                                       device.policyMatchReason === 'direct' ? "Direct Assignment" : "Default"}
                                     </Badge>
                                   </div>
                                   
+                                  {/* IP Address Information - Always show when available */}
+                                  {device.lastSeenIp && (
+                                    <div className="flex flex-col border-t border-border/40 pt-1.5 mt-1.5">
+                                      <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-1.5">
+                                          <Wifi className="h-3.5 w-3.5 text-blue-500" />
+                                          <span className="text-xs font-mono">{device.lastSeenIp}</span>
+                                        </div>
+                                        <Badge variant="outline" className="text-[9px] h-4 px-1 py-0 border-blue-300">
+                                          Last checked: {formatDistanceToNow(new Date())} ago
+                                        </Badge>
+                                      </div>
+                                      
+                                      {/* Network Policy Info */}
+                                      {device.policyMatchReason === 'ip' && device.ipNetworkName && (
+                                        <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                                          Matched network: {device.ipNetworkName}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Policy Description - Simple explanation of what's happening */}
                                   <div className="text-xs text-muted-foreground">
-                                    {!device.location ? (
-                                      "No location data available. Using default policy."
-                                    ) : device.location.is_stale ? (
-                                      `Location data is stale (>5 min old). Using default policy.`
-                                    ) : activePolicy?.isDefault ? (
-                                      "Device outside all policy boundaries. Using default policy."
-                                    ) : activePolicy?.locations[0] ? (
-                                      `Within "${activePolicy?.locations[0].displayName}" boundary`
+                                    {device.policyMatchReason === 'direct' ? (
+                                      "Device is directly assigned to this policy."
+                                    ) : device.policyMatchReason === 'ip' ? (
+                                      "Using network-based policy detection."
+                                    ) : device.activePolicyObj?.isDefault ? (
+                                      "Using default policy. No network match found."
                                     ) : (
-                                      "Location-based policy"
+                                      "Using policy based on device settings."
                                     )}
                                   </div>
                                   
-                                  {device.location ? (
-                                    <div className="flex items-center justify-between pt-1 text-xs">
-                                      <div className="flex items-center">
-                                        {device.location.is_stale ? (
-                                          <MapPinOff className="h-3 w-3 mr-1 text-orange-500" />
-                                        ) : (
-                                          <MapPin className="h-3 w-3 mr-1 text-green-500" />
-                                        )}
-                                        <span className={`text-muted-foreground ${device.location.is_stale ? "text-orange-500" : ""}`}>
-                                          Updated {formatDistanceToNow(device.location.last_updated)} ago
-                                        </span>
-                                      </div>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm" 
-                                        className="h-6 px-2"
-                                        onClick={() => handleRefreshLocation(device.id)}
-                                        disabled={refreshingLocation === device.id}
-                                      >
-                                        <RefreshCw className={`h-3 w-3 mr-1 ${refreshingLocation === device.id ? "animate-spin" : ""}`} />
-                                        Update
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center justify-between pt-1 text-xs">
-                                      <span className="text-muted-foreground flex items-center">
-                                        <MapPinOff className="h-3 w-3 mr-1 text-orange-500" />
-                                        No location data available
-                                      </span>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm" 
-                                        className="h-6 px-2"
-                                        onClick={() => handleRefreshLocation(device.id)}
-                                        disabled={refreshingLocation === device.id}
-                                      >
-                                        <RefreshCw className={`h-3 w-3 mr-1 ${refreshingLocation === device.id ? "animate-spin" : ""}`} />
-                                        Request
-                                      </Button>
-                                    </div>
-                                  )}
+                                  {/* Device Last Seen Info - Simplified without location focus */}
+                                  <div className="flex items-center justify-between border-t border-border/40 pt-1.5 mt-1 text-xs text-muted-foreground">
+                                    <span>
+                                      Device last seen {formatDistanceToNow(device.last_seen)} ago
+                                    </span>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="h-6 px-2"
+                                      onClick={() => handleRefreshLocation(device.id)}
+                                      disabled={refreshingLocation === device.id}
+                                    >
+                                      <RefreshCw className={`h-3 w-3 mr-1 ${refreshingLocation === device.id ? "animate-spin" : ""}`} />
+                                      Refresh
+                                    </Button>
+                                  </div>
                                 </div>
                               </CardContent>
                             </Card>
@@ -558,7 +928,7 @@ const Dashboard = () => {
                             <h4 className="font-medium text-sm">Location Notice</h4>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {formattedDevices.filter(d => !d.location || d.location.is_stale).length} device(s) not shown on map due to missing or stale location data (older than 5 minutes).
+                            {formattedDevices.filter(d => !d.location || d.location.is_stale).length} device(s) not shown on map due to missing or stale location data (older than 10 minutes).
                           </p>
                         </div>
                       )}
