@@ -315,18 +315,7 @@ const profilePolicyService = {
     // Get profile IDs from the active policy
     const profileIds = activePolicy.profiles.map(p => p.id);
     
-    // Check if this policy was recently applied to avoid duplicate pushes
-    // Only skip if no profiles were removed (which would indicate a policy change)
-    if (profilesRemoved === 0 && this.wasPolicyRecentlyApplied(deviceId, activePolicy.id, profileIds)) {
-      console.log(`Policy "${activePolicy.name}" was recently applied to device ${deviceId}, skipping`);
-      return { 
-        policyApplied: false, 
-        policyName: activePolicy.name, 
-        profilesPushed: 0,
-        profilesRemoved,
-        removedProfiles
-      };
-    }
+    // REMOVED: The policy duplicate check that was preventing profiles from being pushed
     
     // Push the profiles from the policy to the device
     const pushedProfileIds = await this.pushPolicyProfilesToDevice(activePolicy, deviceId);
@@ -438,11 +427,22 @@ const profilePolicyService = {
         }
         
         // Remove the profile via SimpleMDM API
-        await simplemdmApi.removeProfileFromDevice(profile.id, deviceId);
-        
-        removed++;
-        removedProfileNames.push(profile.name);
-        console.log(`Profile "${profile.name}" removed successfully`);
+        try {
+          await simplemdmApi.removeProfileFromDevice(profile.id, deviceId);
+          
+          removed++;
+          removedProfileNames.push(profile.name);
+          console.log(`Profile "${profile.name}" removed successfully`);
+        } catch (removeError: any) {
+          // Handle 409 Conflict errors gracefully - likely means the profile wasn't actually installed
+          if (removeError?.response?.status === 409) {
+            console.log(`Profile "${profile.name}" couldn't be removed - it may not be installed (409 Conflict)`);
+          } else {
+            // For other errors, count as failed
+            failed++;
+            console.error(`Failed to remove profile "${profile.name}":`, removeError);
+          }
+        }
       } catch (error) {
         failed++;
         console.error(`Failed to remove profile "${profile.name}":`, error);
