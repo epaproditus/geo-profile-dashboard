@@ -5,7 +5,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -18,6 +20,7 @@ import {
   AppWindow
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { signOut, getCurrentUser } from '../lib/supabase';
 
 const Navbar = () => {
   const location = useLocation();
@@ -25,6 +28,7 @@ const Navbar = () => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const handleLogout = () => {
     localStorage.removeItem("isAuthenticated");
@@ -46,6 +50,44 @@ const Navbar = () => {
   useEffect(() => {
     setIsMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const user = await getCurrentUser();
+        setUserEmail(user?.email || null);
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      }
+    };
+
+    fetchUser();
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await signOut();
+      
+      if (error) {
+        throw error;
+      }
+      
+      toast({
+        title: 'Signed out successfully',
+        description: 'You have been logged out of your account.',
+      });
+      
+      // Redirect to login page
+      window.location.href = '/login';
+    } catch (error: any) {
+      console.error('Sign out error:', error);
+      toast({
+        title: 'Sign out failed',
+        description: error.message || 'An error occurred while signing out.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
@@ -102,19 +144,24 @@ const Navbar = () => {
             </nav>
 
             <div className="flex items-center gap-4">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full">
-                    <User className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem className="text-red-500" onClick={handleLogout}>
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Logout
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {userEmail && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="rounded-full">
+                      <User className="h-5 w-5" />
+                      <span className="hidden md:inline">{userEmail}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut} className="text-red-600 cursor-pointer">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Sign out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </>
         )}

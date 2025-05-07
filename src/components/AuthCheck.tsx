@@ -1,29 +1,54 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getCurrentUser } from '../lib/supabase';
+import { Loader2 } from 'lucide-react';
 
-import { useEffect, useState, ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+interface AuthCheckProps {
+  children: React.ReactNode;
+}
 
-const AuthCheck = ({ children }: { children: ReactNode }) => {
-  const navigate = useNavigate();
+const AuthCheck: React.FC<AuthCheckProps> = ({ children }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
+  const navigate = useNavigate();
+
   useEffect(() => {
-    const isAuthenticated = localStorage.getItem("isAuthenticated");
-    if (!isAuthenticated) {
-      navigate("/login");
-    } else {
-      setIsLoading(false);
-    }
+    const checkAuth = async () => {
+      try {
+        setIsLoading(true);
+        const user = await getCurrentUser();
+        
+        if (!user) {
+          // Not authenticated, redirect to login
+          navigate('/login');
+          return;
+        }
+        
+        // User is authenticated
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error('Authentication error:', error);
+        // On error, redirect to login as a fallback
+        navigate('/login');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
   }, [navigate]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse">Checking authentication...</div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">Verifying authentication...</span>
       </div>
     );
   }
 
-  return <>{children}</>;
+  // Only render children if authenticated
+  return isAuthenticated ? <>{children}</> : null;
 };
 
 export default AuthCheck;

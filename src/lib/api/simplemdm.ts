@@ -1,5 +1,6 @@
 import axios from 'axios';
 import locationProfileService from '../services/location-profile-service';
+import { supabase } from '../supabase';
 
 // API Configuration
 const BASE_URL = import.meta.env.PROD 
@@ -14,8 +15,25 @@ const apiClient = axios.create({
   },
 });
 
-// The API key will now be handled by the API proxy
-// No need for auth header in the frontend code
+// Add auth interceptor to include Supabase token with every request
+apiClient.interceptors.request.use(async (config) => {
+  try {
+    // Get the current session from Supabase
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    
+    if (session?.access_token) {
+      // Add the access token as a Bearer token
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+  } catch (error) {
+    console.error('Error setting auth token:', error);
+  }
+  
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
 
 // Service subscription type
 export interface ServiceSubscription {

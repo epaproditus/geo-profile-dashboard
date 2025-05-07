@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
+import { supabase } from "./lib/supabase";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -14,31 +16,58 @@ import SimpleMDMTest from "./pages/SimpleMDMTest";
 import AppCatalog from "./pages/AppCatalog";
 import TestCardLayout from "./pages/TestCardLayout";
 import PolicyAssignmentTest from "./pages/PolicyAssignmentTest";
+import AuthCheck from "./components/AuthCheck";
+import AuthCallback from "./pages/auth/Callback";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/geofences" element={<Geofences />} />
-          <Route path="/devices" element={<Devices />} />
-          <Route path="/profiles" element={<Profiles />} />
-          <Route path="/app-catalog" element={<AppCatalog />} />
-          <Route path="/simplemdm-test" element={<SimpleMDMTest />} />
-          <Route path="/test-cards" element={<TestCardLayout />} />
-          <Route path="/policy-assignment-test" element={<PolicyAssignmentTest />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  // Set up Supabase auth listener
+  useEffect(() => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN') {
+        console.log('User signed in:', session?.user?.email);
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out');
+      }
+    });
+
+    // Clean up subscription when component unmounts
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/" element={<Index />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            
+            {/* Protected routes - require authentication */}
+            <Route path="/dashboard" element={<AuthCheck><Dashboard /></AuthCheck>} />
+            <Route path="/geofences" element={<AuthCheck><Geofences /></AuthCheck>} />
+            <Route path="/devices" element={<AuthCheck><Devices /></AuthCheck>} />
+            <Route path="/profiles" element={<AuthCheck><Profiles /></AuthCheck>} />
+            <Route path="/app-catalog" element={<AuthCheck><AppCatalog /></AuthCheck>} />
+            <Route path="/simplemdm-test" element={<AuthCheck><SimpleMDMTest /></AuthCheck>} />
+            <Route path="/test-cards" element={<AuthCheck><TestCardLayout /></AuthCheck>} />
+            <Route path="/policy-assignment-test" element={<AuthCheck><PolicyAssignmentTest /></AuthCheck>} />
+            
+            {/* Fallback route */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
