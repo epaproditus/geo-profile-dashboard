@@ -18,6 +18,7 @@ import TestCardLayout from "./pages/TestCardLayout";
 import PolicyAssignmentTest from "./pages/PolicyAssignmentTest";
 import AuthCheck from "./components/AuthCheck";
 import AuthCallback from "./pages/auth/Callback";
+import Callback from "./pages/Callback"; // Import the new root callback component
 
 const queryClient = new QueryClient();
 
@@ -50,7 +51,7 @@ const App = () => {
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route path="/callback" element={<AuthCallback />} /> {/* Added direct callback route */}
+            <Route path="/callback" element={<Callback />} /> {/* Using our new dedicated component */}
             
             {/* Protected routes - require authentication */}
             <Route path="/dashboard" element={<AuthCheck><Dashboard /></AuthCheck>} />
