@@ -18,45 +18,67 @@ export default async function handler(req, res) {
     }
     
     // Extract path parameters (everything after /api/simplemdm/)
-    const { path } = req.query;
+    const pathSegments = req.query.path || [];
+    const path = Array.isArray(pathSegments) ? pathSegments.join('/') : pathSegments;
+    
+    console.log('Path segments:', pathSegments);
+    console.log('Path:', path);
     
     if (!path) {
-      return res.status(400).json({ error: 'No path specified' });
+      return res.status(400).json({ 
+        error: 'No path specified',
+        message: 'API path is required' 
+      });
     }
     
     // Build the target URL for SimpleMDM API
-    const targetUrl = `https://a.simplemdm.com/api/v1/${Array.isArray(path) ? path.join('/') : path}`;
+    const targetUrl = `https://a.simplemdm.com/api/v1/${path}`;
     
-    // Get request body for non-GET requests
-    let body = undefined;
-    if (req.method !== 'GET' && req.body) {
-      body = JSON.stringify(req.body);
-    }
+    // Get query parameters excluding the path parameter
+    const queryParams = new URLSearchParams();
+    Object.keys(req.query).forEach(key => {
+      if (key !== 'path') {
+        const value = req.query[key];
+        if (Array.isArray(value)) {
+          value.forEach(v => queryParams.append(key, v));
+        } else {
+          queryParams.append(key, value);
+        }
+      }
+    });
     
-    // Add query parameters if present
-    let queryString = '';
-    try {
-      queryString = new URL(req.url, 'http://localhost').search;
-    } catch (err) {
-      console.warn('Error parsing URL:', err.message);
-    }
-    
-    const fullUrl = targetUrl + queryString;
+    const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    const fullUrl = `${targetUrl}${queryString}`;
     
     console.log(`Proxying ${req.method} request to: ${fullUrl}`);
     
     // Create authorization header with API key
     const authHeader = `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`;
     
-    // Forward the request to SimpleMDM
-    const response = await fetch(fullUrl, {
+    // Prepare request options
+    const requestOptions = {
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': authHeader
-      },
-      body: body
+      }
+    };
+    
+    // Add body for non-GET requests
+    if (req.method !== 'GET' && req.body) {
+      requestOptions.body = typeof req.body === 'string' 
+        ? req.body 
+        : JSON.stringify(req.body);
+    }
+    
+    // Forward the request to SimpleMDM
+    console.log('Sending request with options:', {
+      method: requestOptions.method,
+      url: fullUrl,
+      hasBody: !!requestOptions.body
     });
+    
+    const response = await fetch(fullUrl, requestOptions);
     
     // Check if response is ok
     if (!response.ok) {
