@@ -6,13 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow, differenceInMinutes } from "date-fns";
-import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle, MapPinOff, Wifi } from "lucide-react";
+import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle, MapPinOff, Wifi, Clock } from "lucide-react";
 import { useDevices, useUpdateDeviceLocation } from "@/hooks/use-simplemdm";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isIpInRange } from "@/lib/utils";
 import { getLocationFromIp, getLocationFromIpSync, GeoLocation } from "@/lib/utils/ip-geolocation";
 import profilePolicyService from "@/lib/services/profile-policy-service";
+import { useQueryClient } from '@tanstack/react-query';
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Constants for localStorage keys and location staleness
 const POLICY_STORAGE_KEY = 'geo-profile-dashboard-policies';
@@ -172,6 +175,11 @@ const Dashboard = () => {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [refreshingLocation, setRefreshingLocation] = useState<string | false>(false);
   const { toast } = useToast(); // Use the useToast hook
+  const queryClient = useQueryClient(); // Get query client for cache invalidation
+  
+  // Auto-refresh configuration
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState("60"); // Default to 1 minute (60 seconds)
+  const autoRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Store device IP addresses to detect changes
   const [deviceIpMap, setDeviceIpMap] = useState<Record<string, string>>({});
@@ -184,6 +192,59 @@ const Dashboard = () => {
   
   // Show monitoring status in the Dashboard
   const [ipMonitoringActive, setIpMonitoringActive] = useState(false);
+
+  // Auto-refresh functionality
+  const toggleAutoRefresh = () => {
+    if (autoRefreshIntervalRef.current) {
+      // Turn off auto-refresh
+      clearInterval(autoRefreshIntervalRef.current);
+      autoRefreshIntervalRef.current = null;
+      
+      toast({
+        title: "Auto-Refresh Disabled",
+        description: "Dashboard auto-refresh has been turned off.",
+        duration: 3000,
+      });
+    } else {
+      // Turn on auto-refresh
+      const intervalMs = parseInt(autoRefreshInterval) * 1000;
+      
+      if (isNaN(intervalMs) || intervalMs < 5000) {
+        toast({
+          title: "Invalid Interval",
+          description: "Please select a valid refresh interval (minimum 5 seconds).",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+      
+      // First refresh immediately
+      handleManualRefresh();
+      
+      // Then set up the interval
+      autoRefreshIntervalRef.current = setInterval(() => {
+        console.log(`🔄 Auto-refreshing dashboard at ${new Date().toISOString()}`);
+        handleManualRefresh();
+      }, intervalMs);
+      
+      toast({
+        title: "Auto-Refresh Enabled",
+        description: `Dashboard will refresh every ${autoRefreshInterval} seconds.`,
+        duration: 3000,
+      });
+    }
+  };
+  
+  // Clean up auto-refresh interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (autoRefreshIntervalRef.current) {
+        clearInterval(autoRefreshIntervalRef.current);
+        autoRefreshIntervalRef.current = null;
+      }
+    };
+  }, []);
   
   // Check if IP monitoring is running
   useEffect(() => {
@@ -194,6 +255,8 @@ const Dashboard = () => {
   
   // Function to toggle IP monitoring on/off
   const toggleIpMonitoring = () => {
+    const queryClient = useQueryClient(); // Get query client for cache invalidation
+    
     if (ipMonitoringActive && pollingIntervalRef.current) {
       // Turn off monitoring
       clearInterval(pollingIntervalRef.current);
@@ -300,6 +363,9 @@ const Dashboard = () => {
                   ...prev,
                   [deviceId]: currentIp
                 }));
+                
+                // Force a global refetch of device data to update the UI
+                queryClient.invalidateQueries({ queryKey: ['devices'] });
                 
                 // Process the IP change
                 profilePolicyService.processDeviceConnection(deviceId, currentIp)
@@ -451,6 +517,54 @@ const Dashboard = () => {
     });
   };
 
+  // Start auto-refresh when the component mounts
+  useEffect(() => {
+    // Set up auto-refresh immediately when component loads
+    const startAutoRefresh = () => {
+      const intervalMs = parseInt(autoRefreshInterval) * 1000;
+      
+      // First refresh immediately
+      handleManualRefresh();
+      
+      // Then set up the interval
+      autoRefreshIntervalRef.current = setInterval(() => {
+        console.log(`🔄 Auto-refreshing dashboard at ${new Date().toISOString()}`);
+        handleManualRefresh();
+      }, intervalMs);
+      
+      console.log(`🔄 Auto-refresh enabled with ${intervalMs/1000} second interval`);
+    };
+    
+    // Start auto-refresh now
+    startAutoRefresh();
+    
+    // Clean up when unmounting
+    return () => {
+      if (autoRefreshIntervalRef.current) {
+        clearInterval(autoRefreshIntervalRef.current);
+        autoRefreshIntervalRef.current = null;
+      }
+    };
+  }, []); // Empty dependency array so it only runs once on mount
+  
+  // Update refresh interval when the selected interval changes
+  useEffect(() => {
+    // If we already have an active interval, restart it with the new timing
+    if (autoRefreshIntervalRef.current) {
+      // Clear the existing interval
+      clearInterval(autoRefreshIntervalRef.current);
+      
+      // Create a new one with the updated interval
+      const intervalMs = parseInt(autoRefreshInterval) * 1000;
+      autoRefreshIntervalRef.current = setInterval(() => {
+        console.log(`🔄 Auto-refreshing dashboard at ${new Date().toISOString()}`);
+        handleManualRefresh();
+      }, intervalMs);
+      
+      console.log(`🔄 Auto-refresh interval updated to ${intervalMs/1000} seconds`);
+    }
+  }, [autoRefreshInterval]); // Run when the interval selection changes
+
   // Format devices from the API response
   const formattedDevices = devicesData?.data?.map(device => {
     // Extract IP address data - primary location method now
@@ -476,7 +590,7 @@ const Dashboard = () => {
     if (activePolicyObj && !activePolicyObj.isDefault) {
       if (activePolicyObj.devices.some(d => d.id === device.id.toString())) {
         policyMatchReason = 'direct';
-      } else if (lastSeenIp && activePolicyObj.ipRanges && 
+      } else if (lastSeenIp && activePolicyObj?.ipRanges && 
                 isDeviceIpInPolicyRange(lastSeenIp, activePolicyObj)) {
         policyMatchReason = 'ip';
       }
@@ -660,13 +774,29 @@ const Dashboard = () => {
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold">Dashboard</h1>
             <div className="flex gap-2">
+              <Select 
+                value={autoRefreshInterval} 
+                onValueChange={setAutoRefreshInterval}
+              >
+                <SelectTrigger className="w-[120px]">
+                  <Clock className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Refresh Every" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 seconds</SelectItem>
+                  <SelectItem value="10">10 seconds</SelectItem>
+                  <SelectItem value="30">30 seconds</SelectItem>
+                  <SelectItem value="60">1 minute</SelectItem>
+                  <SelectItem value="300">5 minutes</SelectItem>
+                </SelectContent>
+              </Select>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={handleManualRefresh}
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh Dashboard
+                Refresh Now
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <a href="/geofences">

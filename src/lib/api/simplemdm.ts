@@ -3,8 +3,8 @@ import locationProfileService from '../services/location-profile-service';
 
 // API Configuration
 const BASE_URL = import.meta.env.PROD 
-  ? 'https://a.simplemdm.com/api/v1'  // Production URL
-  : '/api/simplemdm';                 // Development proxy URL
+  ? '/api/simplemdm'  // Use proxy in production
+  : '/api/simplemdm'; // Also use proxy in development for consistency
 
 // Create an axios instance with default configuration
 const apiClient = axios.create({
@@ -14,13 +14,8 @@ const apiClient = axios.create({
   },
 });
 
-// Only add auth header when in production, for development we use the proxy
-if (import.meta.env.PROD) {
-  apiClient.defaults.auth = {
-    username: import.meta.env.VITE_SIMPLEMDM_API_KEY || '',
-    password: '',
-  };
-}
+// The API key will now be handled by the API proxy
+// No need for auth header in the frontend code
 
 // Service subscription type
 export interface ServiceSubscription {

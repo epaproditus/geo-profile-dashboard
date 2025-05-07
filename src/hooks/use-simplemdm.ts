@@ -7,6 +7,8 @@ export const useDevices = (params?: { limit?: number; starting_after?: string; d
   return useQuery<SimpleMDMListResponse<SimpleMDMDevice>>({
     queryKey: ['devices', params],
     queryFn: () => simplemdmApi.getDevices(params),
+    staleTime: 0, // Consider data stale immediately so it will refetch
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   });
 };
 
