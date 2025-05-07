@@ -15,11 +15,37 @@ export default function AuthCallback() {
         const hash = window.location.hash
         
         if (hash) {
-          // If there's a hash, let Supabase handle the redirect
-          const { error } = await supabase.auth.getSession()
+          console.log('Processing auth hash:', hash)
           
-          if (error) {
-            throw error
+          // Extract tokens from the hash
+          const hashParams = new URLSearchParams(hash.substring(1))
+          const accessToken = hashParams.get('access_token')
+          const refreshToken = hashParams.get('refresh_token')
+          
+          if (!accessToken) {
+            throw new Error('No access token found in URL')
+          }
+          
+          console.log('Access token found, setting session')
+          
+          // Manually set the session with the tokens
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || '',
+          })
+          
+          if (sessionError) {
+            throw sessionError
+          }
+          
+          // Set auth flag in localStorage (if your app uses this pattern)
+          localStorage.setItem('isAuthenticated', 'true')
+        } else {
+          // If there's no hash, try to get the session normally
+          const { error: sessionError } = await supabase.auth.getSession()
+          
+          if (sessionError) {
+            throw sessionError
           }
         }
         

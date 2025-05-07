@@ -16,7 +16,8 @@ export const signInWithEmail = async (email: string) => {
   const { data, error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      // Use both callback paths to ensure compatibility
+      emailRedirectTo: `${window.location.origin}/callback`,
     },
   })
   
