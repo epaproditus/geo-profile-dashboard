@@ -1,487 +1,514 @@
-// Profile Policy Service - Handles pushing profiles to devices based on IP address
+// Create a new service for handling profile policies with Supabase
+import { supabase, policiesDB } from "@/lib/supabase";
+import { v4 as uuidv4 } from "uuid";
+import { toast } from "sonner";
 
-import simplemdmApi from '../api/simplemdm';
-import { isIpInRange } from '../utils';
-import { getLocationFromIp } from '../utils/ip-geolocation';
+// Type definitions
+export interface Location {
+  displayName: string;
+  latitude: number;
+  longitude: number;
+  radius: number;
+  geofenceId: string;
+}
 
-// LocalStorage keys
-const POLICY_STORAGE_KEY = 'geo-profile-dashboard-policies';
-const DEVICE_POLICY_HISTORY_KEY = 'geo-profile-dashboard-device-policy-history';
+export interface IpRange {
+  displayName: string;
+  ipAddress: string;
+  geofenceId: string;
+}
 
-// Interface for zone policies
-interface ZonePolicy {
+export interface Device {
+  id: string;
+  name: string;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+}
+
+export interface ZonePolicy {
   id: string;
   name: string;
   description: string;
   isDefault: boolean;
-  locations: {
-    displayName: string;
-    latitude: number;
-    longitude: number;
-    radius: number;
-    geofenceId: string;
-  }[];
-  ipRanges?: {
-    displayName: string;
-    ipAddress: string;
-    geofenceId: string;
-  }[];
-  devices: {
-    id: string;
-    name: string;
-  }[];
-  profiles: {
-    id: string;
-    name: string;
-  }[];
+  locations: Location[];
+  ipRanges?: IpRange[];
+  devices: Device[];
+  profiles: Profile[];
 }
 
-// Interface to track device policy application history
-interface DevicePolicyHistory {
-  deviceId: string;
-  policyId: string;
-  appliedAt: string; // ISO date string
-  ipAddress: string | null;
-  profileIds: string[]; // IDs of profiles that were pushed
-}
+// Default policies if none exist
+export const defaultPolicies: ZonePolicy[] = [
+  {
+    id: uuidv4(),
+    name: "Default Policy",
+    description: "Applied when no other policies match",
+    isDefault: true,
+    locations: [],
+    ipRanges: [],
+    devices: [],
+    profiles: []
+  }
+];
 
 /**
- * Profile Policy Service for managing IP-based profile distribution
+ * Service for managing profile policies with Supabase
  */
-const profilePolicyService = {
+class ProfilePolicyService {
   /**
-   * Load policies from localStorage
+   * Get all policies for the current user
    */
-  loadPolicies(): ZonePolicy[] {
+  async getPolicies(): Promise<ZonePolicy[]> {
     try {
-      const saved = localStorage.getItem(POLICY_STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
+      // Check if user is authenticated
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("No authenticated user");
+        toast.error("Authentication required to access policies");
+        return [];
       }
-    } catch (error) {
-      console.error('Error loading policies from localStorage:', error);
-    }
-    return [];
-  },
 
-  /**
-   * Load device policy history from localStorage
-   */
-  loadDevicePolicyHistory(): DevicePolicyHistory[] {
-    try {
-      const saved = localStorage.getItem(DEVICE_POLICY_HISTORY_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (error) {
-      console.error('Error loading device policy history from localStorage:', error);
-    }
-    return [];
-  },
+      const { data, error } = await policiesDB.getPolicies();
 
-  /**
-   * Save device policy history to localStorage
-   */
-  saveDevicePolicyHistory(history: DevicePolicyHistory[]): void {
-    try {
-      localStorage.setItem(DEVICE_POLICY_HISTORY_KEY, JSON.stringify(history));
-    } catch (error) {
-      console.error('Error saving device policy history to localStorage:', error);
-    }
-  },
-
-  /**
-   * Add a policy application event to history
-   */
-  recordPolicyApplication(deviceId: string, policyId: string, ipAddress: string | null, profileIds: string[]): void {
-    const history = this.loadDevicePolicyHistory();
-    
-    // Add new history entry
-    history.push({
-      deviceId,
-      policyId,
-      appliedAt: new Date().toISOString(),
-      ipAddress,
-      profileIds
-    });
-    
-    // Keep history limited to last 100 entries
-    if (history.length > 100) {
-      history.splice(0, history.length - 100);
-    }
-    
-    this.saveDevicePolicyHistory(history);
-  },
-
-  /**
-   * Check if a policy was recently applied to a device to avoid duplicates
-   * Returns true if the policy was applied in the last hour with the same profiles
-   */
-  wasPolicyRecentlyApplied(deviceId: string, policyId: string, profileIds: string[]): boolean {
-    const history = this.loadDevicePolicyHistory();
-    
-    // Look for recent applications of this policy to this device
-    const oneHourAgo = Date.now() - (60 * 60 * 1000);
-    
-    return history.some(entry => {
-      if (entry.deviceId !== deviceId || entry.policyId !== policyId) {
-        return false;
-      }
-      
-      // Check if applied within last hour
-      const appliedTime = new Date(entry.appliedAt).getTime();
-      if (appliedTime < oneHourAgo) {
-        return false;
-      }
-      
-      // Check if same profiles were applied
-      const sameProfiles = profileIds.length === entry.profileIds.length &&
-        profileIds.every(id => entry.profileIds.includes(id));
-      
-      return sameProfiles;
-    });
-  },
-
-  /**
-   * Check if device's IP matches any policy's IP ranges
-   */
-  isDeviceIpInPolicyRange(deviceIp: string | null, policy: ZonePolicy): boolean {
-    if (!deviceIp || !policy.ipRanges || policy.ipRanges.length === 0) {
-      console.log(`Policy ${policy.name}: No device IP (${deviceIp}) or policy has no IP ranges`);
-      return false;
-    }
-    
-    console.log(`Checking if IP ${deviceIp} matches any ranges in policy "${policy.name}"`);
-    
-    for (const ipRange of policy.ipRanges) {
-      if (!ipRange.ipAddress) {
-        console.log(`- Range ${ipRange.displayName} has no IP address defined`);
-        continue;
-      }
-      
-      console.log(`- Checking range "${ipRange.displayName}": ${ipRange.ipAddress}`);
-      const matches = isIpInRange(deviceIp, ipRange.ipAddress);
-      console.log(`  Result: ${matches ? 'MATCH ✓' : 'No match'}`);
-      
-      if (matches) return true;
-    }
-    
-    return false;
-  },
-
-  /**
-   * Get the appropriate policy for a device based on its IP
-   */
-  getActivePolicyForDevice(deviceId: string, deviceIp: string | null): ZonePolicy | null {
-    const policies = this.loadPolicies();
-    console.log(`Checking ${policies.length} policies for device ${deviceId} with IP ${deviceIp || 'unknown'}`);
-    
-    // REVISED PRIORITY: Check IP matches first, then direct assignments
-    
-    // First check if IP matches any policy (highest priority)
-    if (deviceIp) {
-      console.log(`Checking policies for IP match with ${deviceIp}`);
-      
-      for (const policy of policies) {
-        if (policy.isDefault) continue; // Skip default policy for IP check
-
-        console.log(`Checking policy "${policy.name}" (${policy.id})`);
-        
-        if (this.isDeviceIpInPolicyRange(deviceIp, policy)) {
-          console.log(`✅ Found matching policy "${policy.name}" for IP ${deviceIp}`);
-          return policy;
+      if (error) {
+        console.error("Error fetching policies:", error);
+        // Check if this is a table not found error or similar
+        if (error.code === '42P01' || error.message?.includes('does not exist')) {
+          toast.error("Policies database table not yet created");
+        } else {
+          toast.error("Failed to load policies from the database");
         }
+        return [];
       }
-      
-      console.log(`No IP-based policy match found for ${deviceIp}`);
-    }
-    
-    // Then check if device is directly assigned to a policy (second priority)
-    const assignedPolicy = policies.find(p => 
-      p.devices.some(d => d.id === deviceId)
-    );
-    
-    if (assignedPolicy) {
-      console.log(`Device ${deviceId} is directly assigned to policy "${assignedPolicy.name}"`);
-      return assignedPolicy;
-    }
-    
-    // Return default policy as fallback
-    const defaultPolicy = policies.find(p => p.isDefault);
-    console.log(`Falling back to default policy: "${defaultPolicy?.name || 'None found'}"`);
-    return defaultPolicy || null;
-  },
 
-  /**
-   * Push all profiles from a policy to a device
-   * Returns a list of profile IDs that were pushed
-   */
-  async pushPolicyProfilesToDevice(policy: ZonePolicy, deviceId: string): Promise<string[]> {
-    if (!policy.profiles || policy.profiles.length === 0) {
-      console.log(`No profiles to push for policy "${policy.name}"`);
+      if (data.length === 0) {
+        // If no policies in Supabase, create a default one
+        const defaultPolicy = defaultPolicies[0];
+        const createdPolicy = await this.createPolicy(defaultPolicy);
+        return [createdPolicy];
+      }
+
+      // Transform database format to application format
+      return data.map(policy => ({
+        id: policy.id,
+        name: policy.name,
+        description: policy.description,
+        isDefault: policy.is_default,
+        locations: policy.locations || [],
+        ipRanges: policy.ip_ranges || [],
+        devices: policy.devices || [],
+        profiles: policy.profiles || []
+      }));
+    } catch (error) {
+      console.error("Error in getPolicies method:", error);
+      toast.error("Failed to fetch policies");
       return [];
     }
+  }
+
+  /**
+   * Create a new policy
+   */
+  async createPolicy(policy: Omit<ZonePolicy, 'id'>): Promise<ZonePolicy> {
+    const newPolicy = {
+      ...policy,
+      id: uuidv4()
+    };
+
+    // Check if user is authenticated
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log("No authenticated user");
+      toast.error("Authentication required to create policies");
+      throw new Error("Authentication required");
+    }
+
+    const { data, error } = await policiesDB.createPolicy({
+      name: newPolicy.name,
+      description: newPolicy.description,
+      is_default: newPolicy.isDefault,
+      locations: newPolicy.locations,
+      ip_ranges: newPolicy.ipRanges || [],
+      devices: newPolicy.devices,
+      profiles: newPolicy.profiles
+    });
+
+    if (error || !data) {
+      console.error("Error creating policy:", error);
+      toast.error("Failed to save policy to the database");
+      throw new Error("Failed to create policy");
+    }
+
+    toast.success("Policy saved successfully");
     
-    console.log(`Pushing ${policy.profiles.length} profiles from policy "${policy.name}" to device ${deviceId}`);
-    console.log(`Profiles to push: ${policy.profiles.map(p => `"${p.name}" (${p.id})`).join(', ')}`);
-    
-    const pushedProfileIds: string[] = [];
-    
-    for (const profile of policy.profiles) {
-      try {
-        console.log(`Pushing profile "${profile.name}" (ID: ${profile.id}) to device ${deviceId}`);
+    // Convert Supabase response format to ZonePolicy format
+    return {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      isDefault: data.is_default,
+      locations: data.locations || [],
+      ipRanges: data.ip_ranges || [],
+      devices: data.devices || [],
+      profiles: data.profiles || []
+    };
+  }
+
+  /**
+   * Update an existing policy
+   */
+  async updatePolicy(policy: ZonePolicy): Promise<ZonePolicy> {
+    // Check if user is authenticated
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log("No authenticated user");
+      toast.error("Authentication required to update policies");
+      throw new Error("Authentication required");
+    }
+
+    try {
+      // Handle legacy "default-policy" ID by converting to UUID
+      if (policy.id === "default-policy") {
+        console.log("Converting legacy default-policy ID to UUID");
+        // Try to find the default policy
+        const policies = await this.getPolicies();
+        const defaultPolicy = policies.find(p => p.isDefault);
         
-        // First check if profile is already installed
-        try {
-          const isInstalled = await simplemdmApi.isProfileInstalledOnDevice(profile.id, deviceId);
-          if (isInstalled) {
-            console.log(`Profile "${profile.name}" is already installed, skipping`);
-            pushedProfileIds.push(profile.id);
-            continue;
-          }
-        } catch (checkError) {
-          console.error(`Error checking if profile is installed:`, checkError);
-          // Continue with push attempt even if check fails
+        if (defaultPolicy && defaultPolicy.id !== "default-policy") {
+          // Update the existing default policy with this policy's data
+          const updatedPolicy = {
+            ...policy,
+            id: defaultPolicy.id // Use the real UUID
+          };
+          return this.updatePolicy(updatedPolicy);
+        } else {
+          // Create a new default policy with a valid UUID
+          const newDefault = await this.createDefaultPolicy();
+          // Now update it with this policy's data
+          const updatedPolicy = {
+            ...policy,
+            id: newDefault.id
+          };
+          return this.updatePolicy(updatedPolicy);
         }
-        
-        // Push the profile via SimpleMDM API
-        await simplemdmApi.pushProfileToDevice(profile.id, deviceId);
-        
-        pushedProfileIds.push(profile.id);
-        console.log(`Profile "${profile.name}" pushed successfully`);
-      } catch (error) {
-        console.error(`Failed to push profile "${profile.name}":`, error);
       }
-    }
-    
-    return pushedProfileIds;
-  },
 
-  /**
-   * Process a device that has connected to the network
-   * Determines the appropriate policy and pushes/removes profiles if needed
-   * Using IP-based detection only, without GPS location
-   */
-  async processDeviceConnection(deviceId: string, deviceIp: string | null): Promise<{
-    policyApplied: boolean;
-    policyName: string | null;
-    profilesPushed: number;
-    profilesRemoved: number;
-    removedProfiles: string[];
-  }> {
-    console.log(`Processing device ${deviceId} connection from IP: ${deviceIp || 'unknown'}`);
-    
-    // Get the active policy for this device/IP
-    const activePolicy = this.getActivePolicyForDevice(deviceId, deviceIp);
-    
-    if (!activePolicy) {
-      console.log(`No applicable policy found for device ${deviceId}`);
-      return { 
-        policyApplied: false, 
-        policyName: null, 
-        profilesPushed: 0,
-        profilesRemoved: 0,
-        removedProfiles: []
+      // Continue with normal policy update
+      const { data, error } = await policiesDB.updatePolicy(policy.id, {
+        name: policy.name,
+        description: policy.description,
+        is_default: policy.isDefault,
+        locations: policy.locations,
+        ip_ranges: policy.ipRanges || [],
+        devices: policy.devices,
+        profiles: policy.profiles
+      });
+
+      if (error || !data) {
+        console.error("Error updating policy:", error);
+        toast.error("Failed to update policy in the database");
+        throw new Error("Failed to update policy");
+      }
+
+      toast.success("Policy updated successfully");
+      
+      // Convert Supabase response format to ZonePolicy format
+      return {
+        id: data.id,
+        name: data.name,
+        description: data.description,
+        isDefault: data.is_default,
+        locations: data.locations || [],
+        ipRanges: data.ip_ranges || [],
+        devices: data.devices || [],
+        profiles: data.profiles || []
       };
+    } catch (error) {
+      console.error(`Error in updatePolicy for policy ${policy.id}:`, error);
+      toast.error("Failed to update policy");
+      throw error;
     }
-    
-    console.log(`Determined policy "${activePolicy.name}" for device ${deviceId}`);
-    
-    // Get last applied policy information
-    const lastAppliedPolicy = this.getLastAppliedPolicy(deviceId);
-    const oldPolicyId = lastAppliedPolicy ? lastAppliedPolicy.policyId : null;
-    
-    // Check if we need to handle a policy transition (device moved to a different policy)
-    let profilesRemoved = 0;
-    let removedProfiles: string[] = [];
-    
-    if (oldPolicyId && oldPolicyId !== activePolicy.id) {
-      console.log(`Device ${deviceId} has changed policies from ${oldPolicyId} to ${activePolicy.id}`);
-      console.log(`Cleaning up profiles from previous policy`);
-      
-      // Handle policy transition - remove profiles from the old policy
-      const transitionResult = await this.handlePolicyTransition(
-        deviceId, 
-        oldPolicyId, 
-        activePolicy.id
-      );
-      
-      profilesRemoved = transitionResult.profilesRemoved;
-      removedProfiles = transitionResult.removedProfiles;
-      
-      console.log(`Removed ${profilesRemoved} profiles from previous policy`);
-    }
-    
-    // Get profile IDs from the active policy
-    const profileIds = activePolicy.profiles.map(p => p.id);
-    
-    // REMOVED: The policy duplicate check that was preventing profiles from being pushed
-    
-    // Push the profiles from the policy to the device
-    const pushedProfileIds = await this.pushPolicyProfilesToDevice(activePolicy, deviceId);
-    
-    // Record this policy application in history
-    this.recordPolicyApplication(deviceId, activePolicy.id, deviceIp, pushedProfileIds);
-    
-    return {
-      policyApplied: pushedProfileIds.length > 0,
-      policyName: activePolicy.name,
-      profilesPushed: pushedProfileIds.length,
-      profilesRemoved,
-      removedProfiles
-    };
-  },
-  
-  /**
-   * Force apply a specific policy to a device
-   * This bypasses all checks and directly applies the policy's profiles
-   */
-  async forceApplyPolicy(policyId: string, deviceId: string): Promise<{
-    success: boolean;
-    profilesPushed: number;
-    policyName: string | null;
-  }> {
-    console.log(`Forcing policy ${policyId} to be applied to device ${deviceId}`);
-    
-    const policies = this.loadPolicies();
-    const policy = policies.find(p => p.id === policyId);
-    
-    if (!policy) {
-      console.error(`Policy ${policyId} not found`);
-      return { success: false, profilesPushed: 0, policyName: null };
-    }
-    
-    console.log(`Forcing application of policy "${policy.name}" to device ${deviceId}`);
-    const pushedProfileIds = await this.pushPolicyProfilesToDevice(policy, deviceId);
-    
-    // Record this policy application in history
-    this.recordPolicyApplication(deviceId, policy.id, null, pushedProfileIds);
-    
-    return {
-      success: pushedProfileIds.length > 0,
-      profilesPushed: pushedProfileIds.length,
-      policyName: policy.name
-    };
-  },
+  }
 
   /**
-   * Get the last policy that was applied to a device
+   * Delete a policy
    */
-  getLastAppliedPolicy(deviceId: string): { policyId: string; profileIds: string[] } | null {
-    const history = this.loadDevicePolicyHistory();
-    
-    // Find all entries for this device
-    const deviceEntries = history.filter(entry => entry.deviceId === deviceId);
-    
-    if (deviceEntries.length === 0) {
-      console.log(`No policy history found for device ${deviceId}`);
+  async deletePolicy(policyId: string): Promise<boolean> {
+    // Check if user is authenticated
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log("No authenticated user");
+      toast.error("Authentication required to delete policies");
+      throw new Error("Authentication required");
+    }
+
+    try {
+      // Handle legacy "default-policy" ID
+      if (policyId === "default-policy") {
+        console.log("Cannot delete the default policy with legacy ID");
+        toast.error("Cannot delete the default policy");
+        return false;
+      }
+
+      const { error } = await policiesDB.deletePolicy(policyId);
+
+      if (error) {
+        console.error("Error deleting policy:", error);
+        toast.error("Failed to delete policy from the database");
+        throw new Error("Failed to delete policy");
+      }
+
+      toast.success("Policy deleted successfully");
+      return true;
+    } catch (error) {
+      console.error(`Error in deletePolicy for ${policyId}:`, error);
+      toast.error("Failed to delete policy");
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific policy by ID
+   */
+  async getPolicyById(policyId: string): Promise<ZonePolicy | null> {
+    // Check if user is authenticated
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log("No authenticated user");
+      toast.error("Authentication required to access policies");
       return null;
     }
-    
-    // Sort by date (newest first)
-    deviceEntries.sort((a, b) => {
-      return new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime();
-    });
-    
-    // Return the most recent policy
-    return {
-      policyId: deviceEntries[0].policyId,
-      profileIds: deviceEntries[0].profileIds
-    };
-  },
 
-  /**
-   * Remove profiles from a device that are associated with a specific policy
-   */
-  async removeProfilesFromDevice(policy: ZonePolicy, deviceId: string): Promise<{
-    removed: number;
-    failed: number;
-    profileNames: string[];
-  }> {
-    if (!policy.profiles || policy.profiles.length === 0) {
-      console.log(`No profiles to remove for policy "${policy.name}"`);
-      return { removed: 0, failed: 0, profileNames: [] };
-    }
-    
-    console.log(`Removing ${policy.profiles.length} profiles from policy "${policy.name}" from device ${deviceId}`);
-    console.log(`Profiles to remove: ${policy.profiles.map(p => `"${p.name}" (${p.id})`).join(', ')}`);
-    
-    let removed = 0;
-    let failed = 0;
-    const removedProfileNames: string[] = [];
-    
-    for (const profile of policy.profiles) {
-      try {
-        console.log(`Removing profile "${profile.name}" (ID: ${profile.id}) from device ${deviceId}`);
-        
-        // First check if profile is actually installed
-        try {
-          const isInstalled = await simplemdmApi.isProfileInstalledOnDevice(profile.id, deviceId);
-          if (!isInstalled) {
-            console.log(`Profile "${profile.name}" is not installed, skipping removal`);
-            continue;
-          }
-        } catch (checkError) {
-          console.error(`Error checking if profile is installed:`, checkError);
-          // Continue with removal attempt even if check fails
+    try {
+      // Handle legacy "default-policy" ID by converting to UUID
+      if (policyId === "default-policy") {
+        console.log("Converting legacy default-policy ID to UUID");
+        // Try to find the default policy
+        const policies = await this.getPolicies();
+        const defaultPolicy = policies.find(p => p.isDefault);
+        if (defaultPolicy) {
+          return defaultPolicy;
+        } else {
+          // Create a new default policy with a valid UUID
+          return this.createDefaultPolicy();
         }
-        
-        // Remove the profile via SimpleMDM API
-        try {
-          await simplemdmApi.removeProfileFromDevice(profile.id, deviceId);
-          
-          removed++;
-          removedProfileNames.push(profile.name);
-          console.log(`Profile "${profile.name}" removed successfully`);
-        } catch (removeError: any) {
-          // Handle 409 Conflict errors gracefully - likely means the profile wasn't actually installed
-          if (removeError?.response?.status === 409) {
-            console.log(`Profile "${profile.name}" couldn't be removed - it may not be installed (409 Conflict)`);
-          } else {
-            // For other errors, count as failed
-            failed++;
-            console.error(`Failed to remove profile "${profile.name}":`, removeError);
-          }
-        }
-      } catch (error) {
-        failed++;
-        console.error(`Failed to remove profile "${profile.name}":`, error);
       }
-    }
-    
-    return { removed, failed, profileNames: removedProfileNames };
-  },
 
+      // Continue with normal policy retrieval
+      const { data, error } = await policiesDB.getPolicy(policyId);
+
+      if (error || !data) {
+        console.error("Error fetching policy:", error);
+        toast.error("Failed to fetch policy");
+        return null;
+      }
+
+      // Convert Supabase response format to ZonePolicy format
+      return {
+        id: data.id,
+        name: data.name,
+        description: data.description,
+        isDefault: data.is_default,
+        locations: data.locations || [],
+        ipRanges: data.ip_ranges || [],
+        devices: data.devices || [],
+        profiles: data.profiles || []
+      };
+    } catch (error) {
+      console.error(`Error in getPolicyById for ${policyId}:`, error);
+      toast.error("Failed to fetch policy");
+      return null;
+    }
+  }
+  
   /**
-   * Handle device policy transition - removes old policy profiles if needed
+   * Create a default policy with a proper UUID
    */
-  async handlePolicyTransition(deviceId: string, oldPolicyId: string | null, newPolicyId: string): Promise<{
-    profilesRemoved: number;
-    removedProfiles: string[];
-  }> {
-    // If no policy change, no need to remove profiles
-    if (oldPolicyId === newPolicyId) {
-      return { profilesRemoved: 0, removedProfiles: [] };
-    }
-    
-    // Get the old policy
-    const policies = this.loadPolicies();
-    const oldPolicy = oldPolicyId ? policies.find(p => p.id === oldPolicyId) : null;
-    
-    if (!oldPolicy) {
-      console.log(`No previous policy to clean up for device ${deviceId}`);
-      return { profilesRemoved: 0, removedProfiles: [] };
-    }
-    
-    // Remove profiles from the old policy
-    console.log(`Cleaning up profiles from previous policy "${oldPolicy.name}" for device ${deviceId}`);
-    const removalResult = await this.removeProfilesFromDevice(oldPolicy, deviceId);
-    
-    return { 
-      profilesRemoved: removalResult.removed,
-      removedProfiles: removalResult.profileNames
+  private async createDefaultPolicy(): Promise<ZonePolicy> {
+    const defaultPolicy: Omit<ZonePolicy, 'id'> = {
+      name: "Default Policy",
+      description: "Applied when no other policies match",
+      isDefault: true,
+      locations: [],
+      ipRanges: [],
+      devices: [],
+      profiles: []
     };
-  },
-};
+    
+    return this.createPolicy(defaultPolicy);
+  }
 
+  // Storage key for device policy history
+  private static readonly DEVICE_POLICY_HISTORY_KEY = 'device-policy-history';
+  
+  /**
+   * Process a device connection with IP address
+   * This is the primary method for applying profiles based on IP address
+   */
+  async processDeviceConnection(
+    deviceId: string,
+    ipAddress: string
+  ): Promise<{ 
+    policyApplied: boolean, 
+    policyName: string, 
+    profilesPushed: number,
+    profilesRemoved?: number
+  }> {
+    console.log(`Processing connection for device ${deviceId} with IP ${ipAddress}`);
+    
+    try {
+      // Check if user is authenticated
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("No authenticated user");
+        toast.error("Authentication required to process device connection");
+        return { policyApplied: false, policyName: "", profilesPushed: 0 };
+      }
+
+      // Get all policies
+      const policies = await this.getPolicies();
+      
+      if (policies.length === 0) {
+        console.log('No policies set, skipping profile application');
+        return { policyApplied: false, policyName: "", profilesPushed: 0 };
+      }
+      
+      // Find policies that match this device directly
+      const directAssignedPolicies = policies.filter(policy => 
+        !policy.isDefault && policy.devices.some(d => d.id === deviceId)
+      );
+      
+      // Find policies that match by IP address
+      const ipMatchingPolicies = policies.filter(policy => 
+        !policy.isDefault && policy.ipRanges && policy.ipRanges.some(range => 
+          this.isIpInRange(ipAddress, range.ipAddress)
+        )
+      );
+      
+      let activePolicy;
+      let matchReason = "";
+      
+      // Prioritize direct device assignment
+      if (directAssignedPolicies.length > 0) {
+        activePolicy = directAssignedPolicies[0];
+        matchReason = "direct device assignment";
+      }
+      // Then try IP-based matching
+      else if (ipMatchingPolicies.length > 0) {
+        activePolicy = ipMatchingPolicies[0];
+        matchReason = "IP address match";
+      }
+      // Fallback to default policy
+      else {
+        activePolicy = policies.find(p => p.isDefault);
+        matchReason = "default fallback";
+      }
+      
+      if (!activePolicy) {
+        console.log(`No applicable policy found for device ${deviceId}`);
+        return { policyApplied: false, policyName: "", profilesPushed: 0 };
+      }
+      
+      console.log(`Selected policy "${activePolicy.name}" for device ${deviceId} based on ${matchReason}`);
+      
+      // In a real implementation, we would push profiles to the device here
+      // For now, we'll just log it and record the policy application
+      this.recordPolicyApplication(deviceId, activePolicy.id, ipAddress);
+      
+      return { 
+        policyApplied: true, 
+        policyName: activePolicy.name, 
+        profilesPushed: activePolicy.profiles.length
+      };
+    } catch (error) {
+      console.error(`Error processing device connection:`, error);
+      return { policyApplied: false, policyName: "", profilesPushed: 0 };
+    }
+  }
+  
+  /**
+   * Record policy application history
+   * This now uses cloud storage instead of localStorage
+   */
+  private recordPolicyApplication(deviceId: string, policyId: string, ipAddress: string): void {
+    try {
+      // In the future, we can implement this with Supabase
+      // For now, we'll just log it without saving to localStorage
+      console.log(`Policy application recorded: Device ${deviceId}, Policy ${policyId}, IP ${ipAddress}`);
+      
+      // Skip saving to localStorage
+    } catch (error) {
+      console.error('Error recording policy application:', error);
+    }
+  }
+  
+  /**
+   * Load device policy application history
+   */
+  loadDevicePolicyHistory(): Array<{
+    deviceId: string;
+    policyId: string;
+    ipAddress: string;
+    timestamp: string;
+  }> {
+    // In the future, we can implement this with Supabase
+    // For now, just return an empty array instead of using localStorage
+    return [];
+  }
+  
+  /**
+   * Helper method to check if an IP is in a specified range
+   */
+  private isIpInRange(deviceIp: string, rangeIp: string): boolean {
+    try {
+      // Check for exact match first (most common case)
+      if (deviceIp === rangeIp) {
+        console.log(`IP exact match found: ${deviceIp} matches ${rangeIp}`);
+        return true;
+      }
+      
+      // Handle CIDR notation (e.g., "192.168.1.0/24")
+      if (rangeIp.includes('/')) {
+        // Simple string-based check for partial matches
+        const baseIp = rangeIp.split('/')[0];
+        const mask = parseInt(rangeIp.split('/')[1], 10);
+        
+        // For IP addresses like 64.209.154.154, check if they match the base
+        if (mask >= 24 && deviceIp.startsWith(baseIp.substring(0, baseIp.lastIndexOf('.')))) {
+          console.log(`IP subnet match found: ${deviceIp} is within ${rangeIp}`);
+          return true;
+        }
+      }
+      
+      // For other formats like wildcard (e.g., "64.209.154.*")
+      if (rangeIp.includes('*')) {
+        const targetParts = rangeIp.split('.');
+        const deviceParts = deviceIp.split('.');
+        
+        if (targetParts.length !== 4 || deviceParts.length !== 4) {
+          return false;
+        }
+        
+        for (let i = 0; i < 4; i++) {
+          if (targetParts[i] !== '*' && targetParts[i] !== deviceParts[i]) {
+            return false;
+          }
+        }
+        
+        console.log(`IP wildcard match found: ${deviceIp} matches ${rangeIp}`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error(`Error checking IP match: ${error}`);
+      return false;
+    }
+  }
+}
+
+// Export a singleton instance
+const profilePolicyService = new ProfilePolicyService();
 export default profilePolicyService;

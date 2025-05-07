@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import AuthCheck from "@/components/AuthCheck";
 import Navbar from "@/components/Navbar";
@@ -26,6 +26,24 @@ import PolicyLocationSearch from '@/components/geofences/PolicyLocationSearch';
 import DeviceSelector from '@/components/geofences/DeviceSelector';
 import ProfileSelector from '@/components/geofences/ProfileSelector';
 import { getLocationFromIp } from '@/lib/utils/ip-geolocation';
+import profilePolicyService, { ZonePolicy, defaultPolicies } from "@/lib/services/profile-policy-service";
+import { useQueryClient } from "@tanstack/react-query";
+import { v4 as uuidv4 } from 'uuid';
+
+// Default empty geofences array
+const defaultGeofences: Geofence[] = [];
+
+// Define a DEFAULT_POLICY constant for the IP address section
+const DEFAULT_POLICY = {
+  id: "",
+  name: "",
+  description: "",
+  isDefault: false,
+  locations: [],
+  ipRanges: [],
+  devices: [],
+  profiles: []
+};
 
 // Type for geofence objects
 interface Geofence {
@@ -36,180 +54,6 @@ interface Geofence {
   radius: number;
   zonePolicyId: string | null;
 }
-
-// Type for zone policy objects
-interface ZonePolicy {
-  id: string;
-  name: string;
-  description: string;
-  isDefault: boolean;
-  locations: {
-    displayName: string;
-    latitude: number;
-    longitude: number;
-    radius: number; // in meters
-    geofenceId: string; // Reference to the geofence
-  }[];
-  // New field for IP-based geofencing
-  ipRanges?: {
-    displayName: string;
-    ipAddress: string;  // Single IP address
-    geofenceId: string;
-  }[];
-  devices: {
-    id: string;
-    name: string;
-  }[];
-  profiles: {
-    id: string;
-    name: string;
-  }[];
-}
-
-// LocalStorage helper functions
-const STORAGE_KEY = 'geo-profile-dashboard-geofences';
-const POLICY_STORAGE_KEY = 'geo-profile-dashboard-policies';
-
-// Default empty geofences array
-const defaultGeofences: Geofence[] = [];
-
-// Default policies with a basic fallback
-const defaultPolicies: ZonePolicy[] = [
-  { 
-    id: "default-policy", 
-    name: "Default (Fallback) Policy", 
-    description: "Applied when devices are outside all defined locations", 
-    isDefault: true,
-    locations: [
-      {
-        displayName: "Global Default Location",
-        latitude: 37.7749, // San Francisco coordinates as a reasonable default
-        longitude: -122.4194,
-        radius: 1000, // 1km radius - a reasonable starting point
-        geofenceId: "default-geofence"
-      }
-    ],
-    devices: [], // Empty array of devices by default
-    profiles: [] // Empty array of profiles by default
-  }
-];
-
-// Default policy structure 
-const DEFAULT_POLICY = {
-  id: '',
-  name: '',
-  description: '',
-  isActive: true,
-  isDefault: false,
-  priority: 0,
-  locations: [],
-  devices: [],
-  profiles: [],  // Added profiles array
-};
-
-// Save geofences to localStorage
-const saveGeofencesToLocalStorage = (geofences: Geofence[]) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(geofences));
-    return true;
-  } catch (error) {
-    console.error('Error saving geofences to localStorage:', error);
-    return false;
-  }
-};
-
-// Load geofences from localStorage
-const loadGeofencesFromLocalStorage = (): Geofence[] => {
-  try {
-    const savedGeofences = localStorage.getItem(STORAGE_KEY);
-    return savedGeofences ? JSON.parse(savedGeofences) : defaultGeofences;
-  } catch (error) {
-    console.error('Error loading geofences from localStorage:', error);
-    return defaultGeofences;
-  }
-};
-
-// Save policies to localStorage
-const savePoliciesToLocalStorage = (policies: ZonePolicy[]) => {
-  try {
-    localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(policies));
-    return true;
-  } catch (error) {
-    console.error('Error saving policies to localStorage:', error);
-    return false;
-  }
-};
-
-// Load policies from localStorage
-const loadPoliciesFromLocalStorage = (): ZonePolicy[] => {
-  try {
-    const savedPolicies = localStorage.getItem(POLICY_STORAGE_KEY);
-    if (savedPolicies) {
-      const parsed = JSON.parse(savedPolicies);
-      
-      // Migrate old policy format (with 'location') to new format (with 'locations' array)
-      const migratedPolicies = parsed.map((policy: any) => {
-        // Check if this policy uses the old format (has 'location')
-        if (policy.location) {
-          // Create a new clean object with just the properties we want
-          const cleanedPolicy = {
-            id: policy.id,
-            name: policy.name,
-            description: policy.description,
-            isDefault: policy.isDefault,
-            // Convert single location to locations array
-            locations: [policy.location],
-            devices: policy.devices || [],
-            profiles: policy.profiles || []
-          };
-          return cleanedPolicy;
-        }
-        return policy;
-      });
-      
-      // Check if we have all required policies
-      const hasAllPolicies = defaultPolicies.every(defaultPolicy => 
-        migratedPolicies.some((p: ZonePolicy) => p.id === defaultPolicy.id)
-      );
-      
-      // Persist the migrated policies to localStorage
-      if (JSON.stringify(parsed) !== JSON.stringify(migratedPolicies)) {
-        console.log('Migrated policies from old format to new format:', migratedPolicies);
-        localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(migratedPolicies));
-      }
-      
-      return hasAllPolicies ? migratedPolicies : defaultPolicies;
-    }
-    return defaultPolicies;
-  } catch (error) {
-    console.error('Error loading policies from localStorage:', error);
-    return defaultPolicies;
-  }
-};
-
-// Force save policies to localStorage
-const forceSavePoliciesToLocalStorage = (policies: ZonePolicy[]) => {
-  try {
-    // Clean up any inconsistent data before saving
-    const cleanPolicies = policies.map(policy => {
-      // Ensure locations is an array
-      if (!Array.isArray(policy.locations)) {
-        return {
-          ...policy,
-          locations: policy.location ? [policy.location] : []
-        };
-      }
-      return policy;
-    });
-    
-    console.log('Saving clean policies to localStorage:', cleanPolicies);
-    localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(cleanPolicies));
-    return true;
-  } catch (error) {
-    console.error('Error force-saving policies to localStorage:', error);
-    return false;
-  }
-};
 
 // Policy Card Component
 interface PolicyCardProps {
@@ -735,8 +579,16 @@ const PolicyCard: React.FC<PolicyCardProps> = ({ policy, geofences, onEditGeofen
 };
 
 const Geofences = () => {
-  // Initialize state from localStorage
-  const [geofences, setGeofences] = useState<Geofence[]>(loadGeofencesFromLocalStorage);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  // States for the component
+  const [policies, setPolicies] = useState<ZonePolicy[]>([]);
+  const [selectedPolicy, setSelectedPolicy] = useState<ZonePolicy | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [isAddingIpRange, setIsAddingIpRange] = useState(false);
+  const [newIpRange, setNewIpRange] = useState({ displayName: '', ipAddress: '', geofenceId: '' });
+  const [geofences, setGeofences] = useState<Geofence[]>(defaultGeofences);
   const [selectedGeofence, setSelectedGeofence] = useState<string | null>(null);
   const [isAddingGeofence, setIsAddingGeofence] = useState(false);
   const [newGeofenceCoords, setNewGeofenceCoords] = useState<{lat: number, lng: number} | null>(null);
@@ -748,20 +600,6 @@ const Geofences = () => {
   const [locationDisplayName, setLocationDisplayName] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null);
-  const [policies, setPolicies] = useState<ZonePolicy[]>(() => {
-    const loadedPolicies = loadPoliciesFromLocalStorage();
-    console.log('Loaded policies:', loadedPolicies);
-    
-    // Ensure we always have at least the default policy
-    const hasDefault = loadedPolicies.some(p => p.isDefault);
-    
-    if (!hasDefault) {
-      // If there's no default policy, add it to the loaded policies
-      return [...loadedPolicies, ...defaultPolicies.filter(p => p.isDefault)];
-    }
-    
-    return loadedPolicies;
-  });
   const [isNewPolicyDialogOpen, setIsNewPolicyDialogOpen] = useState(false);
   const [isEditPolicyDialogOpen, setIsEditPolicyDialogOpen] = useState(false);
   const [newPolicyName, setNewPolicyName] = useState('');
@@ -782,37 +620,216 @@ const Geofences = () => {
     id: string;
     name: string;
   }[]>([]);
-  
-  const { toast } = useToast();
 
+  // Load policies from Supabase on component mount
   useEffect(() => {
-    // Debug log to help track rendering issues
-    console.log('Current policies state:', policies);
-    
-    // Ensure all policies have necessary properties for display
-    if (policies.length > 0) {
-      const updatedPolicies = policies.map(policy => ({
-        ...policy,
-        // Ensure devices exists
-        devices: policy.devices || [],
-        // Ensure locations is an array
-        locations: Array.isArray(policy.locations) 
-          ? policy.locations 
-          : policy.location 
-            ? [policy.location] 
-            : [],
-        // Ensure profiles exists
-        profiles: policy.profiles || []
-      }));
-      
-      // Only update if there's a difference
-      if (JSON.stringify(updatedPolicies) !== JSON.stringify(policies)) {
-        console.log('Fixing policy structure:', updatedPolicies);
-        setPolicies(updatedPolicies);
-        savePoliciesToLocalStorage(updatedPolicies);
-      }
-    }
+    loadPolicies();
   }, []);
+
+  // Function to load policies from the service
+  const loadPolicies = async () => {
+    try {
+      const loadedPolicies = await profilePolicyService.getPolicies();
+      setPolicies(loadedPolicies);
+      
+      // Select the first policy by default if none is selected
+      if (!selectedPolicy && loadedPolicies.length > 0) {
+        setSelectedPolicy(loadedPolicies[0]);
+      }
+    } catch (error) {
+      console.error('Error loading policies:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load policies',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Function to save policies to Supabase
+  const savePolicies = async (updatedPolicies: ZonePolicy[]) => {
+    try {
+      // For each policy, either update if it exists or create if it's new
+      for (const policy of updatedPolicies) {
+        const existingPolicy = await profilePolicyService.getPolicyById(policy.id);
+        if (existingPolicy) {
+          await profilePolicyService.updatePolicy(policy);
+        } else {
+          await profilePolicyService.createPolicy(policy);
+        }
+      }
+      
+      // Handle any deleted policies
+      for (const oldPolicy of policies) {
+        if (!updatedPolicies.some(p => p.id === oldPolicy.id)) {
+          await profilePolicyService.deletePolicy(oldPolicy.id);
+        }
+      }
+      
+      setPolicies(updatedPolicies);
+      
+      // Invalidate relevant query cache to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      
+    } catch (error) {
+      console.error('Error saving policies:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save policies',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Function to add a new policy
+  const addNewPolicy = async () => {
+    const newPolicy: Omit<ZonePolicy, 'id'> = {
+      name: 'New Policy',
+      description: 'Description of the new policy',
+      isDefault: false,
+      locations: [],
+      ipRanges: [],
+      devices: [],
+      profiles: []
+    };
+    
+    try {
+      const createdPolicy = await profilePolicyService.createPolicy(newPolicy);
+      const updatedPolicies = [...policies, createdPolicy];
+      setPolicies(updatedPolicies);
+      setSelectedPolicy(createdPolicy);
+      setEditMode(true);
+      
+      toast({
+        title: 'Success',
+        description: 'New policy created',
+      });
+    } catch (error) {
+      console.error('Error creating policy:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create new policy',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Function to update the selected policy
+  const updateSelectedPolicy = async (updatedPolicy: ZonePolicy) => {
+    try {
+      await profilePolicyService.updatePolicy(updatedPolicy);
+      
+      const updatedPolicies = policies.map(p => 
+        p.id === updatedPolicy.id ? updatedPolicy : p
+      );
+      
+      setPolicies(updatedPolicies);
+      setSelectedPolicy(updatedPolicy);
+      
+      toast({
+        title: 'Success',
+        description: 'Policy updated successfully',
+      });
+    } catch (error) {
+      console.error('Error updating policy:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update policy',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Function to delete the selected policy
+  const deleteSelectedPolicy = async () => {
+    if (!selectedPolicy) return;
+    
+    // Don't allow deleting the default policy
+    if (selectedPolicy.isDefault) {
+      toast({
+        title: 'Error',
+        description: 'Cannot delete the default policy',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      await profilePolicyService.deletePolicy(selectedPolicy.id);
+      
+      const updatedPolicies = policies.filter(p => p.id !== selectedPolicy.id);
+      setPolicies(updatedPolicies);
+      
+      // Select another policy if available
+      if (updatedPolicies.length > 0) {
+        setSelectedPolicy(updatedPolicies[0]);
+      } else {
+        setSelectedPolicy(null);
+      }
+      
+      toast({
+        title: 'Success',
+        description: 'Policy deleted successfully',
+      });
+    } catch (error) {
+      console.error('Error deleting policy:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete policy',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handle IP range additions
+  const handleAddIpRange = () => {
+    if (!selectedPolicy) return;
+    
+    if (!newIpRange.displayName || !newIpRange.ipAddress) {
+      toast({
+        title: 'Error',
+        description: 'Please provide both a name and IP range',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const updatedIpRanges = [
+      ...(selectedPolicy.ipRanges || []),
+      {
+        ...newIpRange,
+        geofenceId: uuidv4()
+      }
+    ];
+    
+    const updatedPolicy = {
+      ...selectedPolicy,
+      ipRanges: updatedIpRanges
+    };
+    
+    updateSelectedPolicy(updatedPolicy);
+    setNewIpRange({ displayName: '', ipAddress: '', geofenceId: '' });
+    setIsAddingIpRange(false);
+  };
+
+  // Handle IP range deletions
+  const handleDeleteIpRange = (geofenceId: string) => {
+    if (!selectedPolicy || !selectedPolicy.ipRanges) return;
+    
+    const updatedIpRanges = selectedPolicy.ipRanges.filter(
+      range => range.geofenceId !== geofenceId
+    );
+    
+    const updatedPolicy = {
+      ...selectedPolicy,
+      ipRanges: updatedIpRanges
+    };
+    
+    updateSelectedPolicy(updatedPolicy);
+  };
+
+  // Other handler functions for locations, devices, profiles, etc.
+  // ... existing code ...
 
   const handleAddGeofence = (lat: number, lng: number) => {
     setNewGeofenceCoords({ lat, lng });
@@ -837,9 +854,9 @@ const Geofences = () => {
     if (!newGeofenceName || !newGeofenceCoords) return;
     
     if (dialogMode === "create") {
-      // Create new geofence
+      // Create new geofence with UUID
       const newGeofence = {
-        id: `geo${Date.now()}`,
+        id: uuidv4(), // Use UUID instead of timestamp
         name: newGeofenceName,
         latitude: newGeofenceCoords.lat,
         longitude: newGeofenceCoords.lng,
@@ -850,12 +867,9 @@ const Geofences = () => {
       const updatedGeofences = [...geofences, newGeofence];
       setGeofences(updatedGeofences);
       
-      // Save to localStorage
-      const saved = saveGeofencesToLocalStorage(updatedGeofences);
-      
       toast({
         title: "Geofence Added",
-        description: `"${newGeofenceName}" has been created successfully${saved ? ' and saved locally' : ''}.`,
+        description: `"${newGeofenceName}" has been created successfully.`,
       });
     } else if (dialogMode === "edit" && editingGeofenceId) {
       // Update existing geofence
@@ -876,12 +890,9 @@ const Geofences = () => {
       
       setGeofences(updatedGeofences);
       
-      // Save to localStorage
-      const saved = saveGeofencesToLocalStorage(updatedGeofences);
-      
       toast({
         title: "Geofence Updated",
-        description: `"${newGeofenceName}" has been updated successfully${saved ? ' and saved locally' : ''}.`,
+        description: `"${newGeofenceName}" has been updated successfully.`,
       });
     }
     
@@ -957,7 +968,7 @@ const Geofences = () => {
     );
     
     setPolicies(updatedPolicies);
-    savePoliciesToLocalStorage(updatedPolicies);
+    savePolicies(updatedPolicies);
     setIsEditPolicyDialogOpen(false);
     
     toast({
@@ -992,7 +1003,7 @@ const Geofences = () => {
     // Update policies state
     const updatedPolicies = policies.filter(p => p.id !== id);
     setPolicies(updatedPolicies);
-    savePoliciesToLocalStorage(updatedPolicies);
+    savePolicies(updatedPolicies);
     
     // Update any geofences using this policy
     const updatedGeofences = geofences.map(g => {
@@ -1002,7 +1013,6 @@ const Geofences = () => {
       return g;
     });
     setGeofences(updatedGeofences);
-    saveGeofencesToLocalStorage(updatedGeofences);
     
     toast({
       title: "Policy Deleted",
@@ -1026,9 +1036,9 @@ const Geofences = () => {
       return;
     }
   
-    // Create basic policy structure
+    // Create basic policy structure with a valid UUID
     const newPolicy: ZonePolicy = {
-      id: `policy-${Date.now()}`,
+      id: uuidv4(), // Use a proper UUID format instead of string timestamp
       name: newPolicyName,
       description: newPolicyDescription || "",
       isDefault: false,
@@ -1042,7 +1052,7 @@ const Geofences = () => {
       newPolicy.locations = [
         {
           ...newPolicyLocation,
-          geofenceId: `geo-${Date.now()}` // Generate a unique ID for the location
+          geofenceId: uuidv4() // Use a proper UUID format
         }
       ];
     }
@@ -1060,7 +1070,7 @@ const Geofences = () => {
       newPolicy.ipRanges.push({
         displayName: locationNameInput?.value.trim() || "Office Network",
         ipAddress: ipAddressInput.value.trim(),
-        geofenceId: `ip-${Date.now()}`
+        geofenceId: uuidv4() // Use a proper UUID format
       });
     }
     
@@ -1076,7 +1086,7 @@ const Geofences = () => {
     
     const updatedPolicies = [...policies, newPolicy];
     setPolicies(updatedPolicies);
-    savePoliciesToLocalStorage(updatedPolicies);
+    savePolicies(updatedPolicies);
     
     setNewPolicyName('');
     setNewPolicyDescription('');
@@ -1095,16 +1105,13 @@ const Geofences = () => {
     const updatedGeofences = geofences.filter(g => g.id !== id);
     setGeofences(updatedGeofences);
     
-    // Save to localStorage
-    saveGeofencesToLocalStorage(updatedGeofences);
-    
     if (selectedGeofence === id) {
       setSelectedGeofence(null);
     }
     
     toast({
       title: "Geofence Deleted",
-      description: "The geofence has been removed and changes are saved locally.",
+      description: "The geofence has been removed.",
     });
   };
 
@@ -1131,16 +1138,6 @@ const Geofences = () => {
     setNewGeofenceCoords({ lat: geofenceToEdit.latitude, lng: geofenceToEdit.longitude });
     setGeofenceCreationMethod("map"); // Default to map view when editing
     setIsDialogOpen(true);
-  };
-
-  // Function to reset to default geofences
-  const resetToDefaultGeofences = () => {
-    setGeofences(defaultGeofences);
-    saveGeofencesToLocalStorage(defaultGeofences);
-    toast({
-      title: "Geofences Reset",
-      description: "All geofences have been reset to default values.",
-    });
   };
 
   return (
@@ -1286,7 +1283,7 @@ const Geofences = () => {
                 </SelectTrigger>
                 <SelectContent position="popper" sideOffset={5} className="z-[9999]">
                   <SelectItem value="none">No policy</SelectItem>
-                  {defaultPolicies.map((policy) => (
+                  {policies.map((policy) => (
                     <SelectItem key={policy.id} value={policy.id}>
                       {policy.name}
                     </SelectItem>
@@ -1375,7 +1372,7 @@ const Geofences = () => {
                         newPolicy.ipRanges.push({
                           displayName: `Office Network ${newPolicy.ipRanges.length + 1}`,
                           ipAddress: '',
-                          geofenceId: `ip-${Date.now()}`
+                          geofenceId: uuidv4() // Use UUID instead of timestamp-based ID
                         });
                       }}
                     >
@@ -1537,7 +1534,7 @@ const Geofences = () => {
                               latitude: 37.7749,
                               longitude: -122.4194,
                               radius: 100,
-                              geofenceId: `geo-${Date.now()}`
+                              geofenceId: uuidv4() // Use UUID instead of timestamp
                             }
                           ]
                         };
@@ -1596,7 +1593,7 @@ const Geofences = () => {
                                   {
                                     displayName: `Office Network ${currentIpRanges.length + 1}`,
                                     ipAddress: '',
-                                    geofenceId: `ip-${Date.now()}`
+                                    geofenceId: uuidv4() // Use UUID instead of timestamp-based ID
                                   }
                                 ]
                               };
