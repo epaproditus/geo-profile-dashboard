@@ -4,101 +4,63 @@ export default async function handler(req, res) {
     // Get the API key from environment variables - try multiple possible names
     const apiKey = process.env.SIMPLEMDM_API_KEY || process.env.VITE_SIMPLEMDM_API_KEY;
     
-    // Debug environment variables
-    console.log('Environment variables check:');
-    console.log('- API Key exists:', !!apiKey);
-    console.log('- API Key length:', apiKey ? apiKey.length : 0);
+    // Debug environment variables and request info
+    console.log('Request URL:', req.url);
+    console.log('Environment variables check:', !!apiKey);
+    console.log('Request query:', req.query);
     
     if (!apiKey) {
       console.error('API Key not found in environment variables');
       return res.status(500).json({ 
-        error: 'SimpleMDM API key not configured',
-        message: 'Please set the SIMPLEMDM_API_KEY environment variable in Vercel'
+        error: 'SimpleMDM API key not configured'
       });
     }
     
-    // Extract path parameters (everything after /api/simplemdm/)
-    const pathSegments = req.query.path || [];
-    const path = Array.isArray(pathSegments) ? pathSegments.join('/') : pathSegments;
+    // In Vercel, the path parameter might be handled differently
+    // Let's try to extract the path directly from the URL if path query is empty
+    let path = '';
     
-    console.log('Path segments:', pathSegments);
-    console.log('Path:', path);
-    
-    if (!path) {
-      return res.status(400).json({ 
-        error: 'No path specified',
-        message: 'API path is required' 
-      });
+    if (req.query.path) {
+      // If path exists in query (standard Next.js behavior)
+      path = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path;
+    } else {
+      // Alternative method: Extract path from URL
+      const urlPath = req.url || '';
+      const pathMatch = urlPath.match(/\/api\/simplemdm\/(.+?)(?:\?|$)/);
+      if (pathMatch && pathMatch[1]) {
+        path = pathMatch[1];
+      } else {
+        // Default to "devices" if we can't extract a path
+        path = "devices";
+      }
     }
+    
+    console.log('Extracted path:', path);
     
     // Build the target URL for SimpleMDM API
     const targetUrl = `https://a.simplemdm.com/api/v1/${path}`;
     
-    // Get query parameters excluding the path parameter
-    const queryParams = new URLSearchParams();
-    Object.keys(req.query).forEach(key => {
-      if (key !== 'path') {
-        const value = req.query[key];
-        if (Array.isArray(value)) {
-          value.forEach(v => queryParams.append(key, v));
-        } else {
-          queryParams.append(key, value);
-        }
-      }
-    });
+    // Create query string
+    let queryString = '';
+    if (req.url && req.url.includes('?')) {
+      queryString = req.url.substring(req.url.indexOf('?'));
+    }
     
-    const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
     const fullUrl = `${targetUrl}${queryString}`;
-    
-    console.log(`Proxying ${req.method} request to: ${fullUrl}`);
+    console.log(`Proxying request to: ${fullUrl}`);
     
     // Create authorization header with API key
     const authHeader = `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`;
     
-    // Prepare request options
-    const requestOptions = {
+    // Forward the request to SimpleMDM
+    const response = await fetch(fullUrl, {
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': authHeader
-      }
-    };
-    
-    // Add body for non-GET requests
-    if (req.method !== 'GET' && req.body) {
-      requestOptions.body = typeof req.body === 'string' 
-        ? req.body 
-        : JSON.stringify(req.body);
-    }
-    
-    // Forward the request to SimpleMDM
-    console.log('Sending request with options:', {
-      method: requestOptions.method,
-      url: fullUrl,
-      hasBody: !!requestOptions.body
+      },
+      body: req.method !== 'GET' && req.body ? JSON.stringify(req.body) : undefined
     });
-    
-    const response = await fetch(fullUrl, requestOptions);
-    
-    // Check if response is ok
-    if (!response.ok) {
-      console.error(`SimpleMDM API returned error ${response.status}: ${response.statusText}`);
-      
-      // Try to get error details from response
-      let errorText;
-      try {
-        const errorData = await response.text();
-        errorText = errorData;
-      } catch (e) {
-        errorText = 'Could not parse error response';
-      }
-      
-      return res.status(response.status).json({
-        error: `SimpleMDM API error: ${response.statusText}`,
-        details: errorText,
-        status: response.status
-      });
-    }
     
     // Get the response data
     const contentType = response.headers.get('content-type');
@@ -107,7 +69,8 @@ export default async function handler(req, res) {
     if (contentType && contentType.includes('application/json')) {
       data = await response.json();
     } else {
-      data = { message: await response.text() };
+      const text = await response.text();
+      data = { message: text };
     }
     
     // Return the response to the client
@@ -116,8 +79,7 @@ export default async function handler(req, res) {
     console.error('API Proxy Error:', error);
     return res.status(500).json({ 
       error: 'Failed to fetch from SimpleMDM API',
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      details: error.message
     });
   }
 }
