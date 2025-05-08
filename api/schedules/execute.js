@@ -3,17 +3,18 @@ import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
   try {
-    // Only allow POST requests for security
-    if (req.method !== 'POST') {
+    // Only allow POST requests for security, but also allow GET for Vercel Cron
+    if (req.method !== 'POST' && req.method !== 'GET') {
       return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // API key based authentication
+    // API key based authentication - Skip if it's from Vercel Cron
     const apiKey = req.headers['x-api-key'];
     const expectedApiKey = process.env.SCHEDULE_EXECUTOR_API_KEY;
+    const isVercelCron = req.headers['x-vercel-cron'] === 'true';
     
-    // Validate API key if configured
-    if (expectedApiKey && apiKey !== expectedApiKey) {
+    // Validate API key if configured and not from Vercel Cron
+    if (expectedApiKey && apiKey !== expectedApiKey && !isVercelCron) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
