@@ -796,14 +796,6 @@ const Dashboard = () => {
                   <SelectItem value="300">5 minutes</SelectItem>
                 </SelectContent>
               </Select>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleManualRefresh}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh Now
-              </Button>
               <Button variant="outline" size="sm" asChild>
                 <a href="/geofences">
                   <MapPin className="h-4 w-4 mr-2" />
