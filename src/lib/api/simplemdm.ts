@@ -485,6 +485,26 @@ export const simplemdmApi = {
       throw error;
     }
   },
+
+  // Download a custom configuration profile's contents
+  async downloadCustomConfigurationProfile(profileId: number | string) {
+    try {
+      // Using responseType: 'text' to get the raw XML/plist data
+      const response = await apiClient.get(`/custom_configuration_profiles/${profileId}/download`, {
+        responseType: 'text'
+      });
+      return { data: response.data, error: null };
+    } catch (error) {
+      console.error(`Error downloading custom configuration profile ${profileId}:`, error);
+      return { data: null, error };
+    }
+  },
+  
+  // Determine if a profile is a custom configuration profile
+  isCustomConfigurationProfile(profile: SimpleMDMProfile): boolean {
+    // Based on SimpleMDM API, custom configuration profiles have a specific type
+    return profile.type === 'custom_configuration_profile';
+  },
 };
 
 export default simplemdmApi;

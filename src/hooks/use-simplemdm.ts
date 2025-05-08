@@ -192,3 +192,20 @@ export const usePushProfileToDevice = () => {
     },
   });
 };
+
+// Hook to download a custom configuration profile
+export const useDownloadCustomConfigurationProfile = () => {
+  const { toast } = useToast();
+  
+  return useMutation({
+    mutationFn: (profileId: number | string) => 
+      simplemdmApi.downloadCustomConfigurationProfile(profileId),
+    onError: (error: any) => {
+      toast({
+        title: "Download Failed",
+        description: error.message || "Failed to download profile content.",
+        variant: "destructive",
+      });
+    },
+  });
+};
