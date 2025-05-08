@@ -172,9 +172,6 @@ const Profiles = () => {
                                   <Badge variant="secondary" className="ml-2">Custom</Badge>
                                 )}
                               </CardTitle>
-                              <Badge variant="outline" className="bg-primary/10 text-primary">
-                                {deviceCount} device{deviceCount !== 1 ? 's' : ''}
-                              </Badge>
                             </div>
                             <CardDescription>
                               {profile.attributes?.description || 
