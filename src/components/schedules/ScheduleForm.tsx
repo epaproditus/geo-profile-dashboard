@@ -59,6 +59,8 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
   // Server time state
   const [serverTime, setServerTime] = useState<Date | null>(null);
   const [serverTimeLoading, setServerTimeLoading] = useState(true);
+  // Date picker popover state
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   
   // Fetch server time
   useEffect(() => {
@@ -325,35 +327,50 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             render={({ field }) => (
               <FormItem className="flex flex-col">
                 <FormLabel>Date</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        variant={"outline"}
-                        className={cn(
-                          "w-full pl-3 text-left font-normal",
-                          !field.value && "text-muted-foreground"
-                        )}
-                      >
-                        {field.value ? (
-                          format(field.value, "PPP")
-                        ) : (
-                          <span>Pick a date</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                <div className="relative">
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full pl-3 text-left font-normal",
+                      !field.value && "text-muted-foreground"
+                    )}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const cal = document.getElementById("date-picker-calendar");
+                      if (cal) {
+                        cal.style.display = cal.style.display === "none" ? "block" : "none";
+                      } else {
+                        console.error("Calendar element not found");
+                      }
+                    }}
+                  >
+                    {field.value ? (
+                      format(field.value, "PPP")
+                    ) : (
+                      <span>Pick a date</span>
+                    )}
+                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                  </Button>
+                  <div 
+                    id="date-picker-calendar" 
+                    className="absolute left-0 z-50 mt-2 rounded-md border bg-popover p-0 shadow-md" 
+                    style={{display: "none"}}
+                  >
                     <Calendar
                       mode="single"
                       selected={field.value}
-                      onSelect={field.onChange}
+                      onSelect={(date) => {
+                        field.onChange(date);
+                        const cal = document.getElementById("date-picker-calendar");
+                        if (cal) cal.style.display = "none";
+                      }}
                       disabled={(date) => date < new Date()}
                       initialFocus
                     />
-                  </PopoverContent>
-                </Popover>
+                  </div>
+                </div>
                 <FormMessage />
               </FormItem>
             )}
