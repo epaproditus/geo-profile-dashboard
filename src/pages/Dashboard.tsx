@@ -780,22 +780,6 @@ const Dashboard = () => {
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold">Dashboard</h1>
             <div className="flex gap-2">
-              <Select 
-                value={autoRefreshInterval} 
-                onValueChange={setAutoRefreshInterval}
-              >
-                <SelectTrigger className="w-[120px]">
-                  <Clock className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Refresh Every" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5">5 seconds</SelectItem>
-                  <SelectItem value="10">10 seconds</SelectItem>
-                  <SelectItem value="30">30 seconds</SelectItem>
-                  <SelectItem value="60">1 minute</SelectItem>
-                  <SelectItem value="300">5 minutes</SelectItem>
-                </SelectContent>
-              </Select>
               <Button variant="outline" size="sm" asChild>
                 <a href="/geofences">
                   <MapPin className="h-4 w-4 mr-2" />
