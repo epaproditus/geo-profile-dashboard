@@ -59,6 +59,10 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
   // Server time state
   const [serverTime, setServerTime] = useState<Date | null>(null);
   const [serverTimeLoading, setServerTimeLoading] = useState(true);
+  
+  // Track which dropdown is currently open
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  
   // Date picker popover state
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   
@@ -237,52 +241,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           />
         </div>
         
-        {/* Profile Selection */}
-        <div>
-          <FormField
-            control={form.control}
-            name="profile_id"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Configuration Profile</FormLabel>
-                <FormControl>
-                  <ProfileSelector
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                </FormControl>
-                <FormDescription>
-                  Select the configuration profile to be installed on the scheduled time.
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-        
-        {/* Device Filter */}
-        <div>
-          <FormField
-            control={form.control}
-            name="device_filter"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Device Filter (Optional)</FormLabel>
-                <FormControl>
-                  <DeviceFilterSelector
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                </FormControl>
-                <FormDescription>
-                  Specify which devices should receive this profile. Leave empty to apply to all devices.
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-        
         {/* Schedule Type */}
         <FormField
           control={form.control}
@@ -379,23 +337,281 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           <FormField
             control={form.control}
             name="start_time"
+            render={({ field }) => {
+              // Parse the current time value (stored in 24-hour format)
+              const [hoursStr, minutesStr] = field.value ? field.value.split(':') : ["09", "00"];
+              const hours24 = parseInt(hoursStr, 10);
+              const minutes = parseInt(minutesStr, 10);
+              
+              // Convert to 12-hour format
+              const hours12 = hours24 % 12 || 12; // Convert 0 to 12
+              const period = hours24 >= 12 ? "PM" : "AM";
+              
+              // Function to toggle a dropdown and close all others
+              const toggleDropdown = (dropdownId: string) => {
+                // Close all dropdowns first
+                ["hour-selector", "minute-selector", "period-selector", "date-picker-calendar"].forEach(id => {
+                  const element = document.getElementById(id);
+                  if (element) element.style.display = "none";
+                });
+                
+                // Then open only the current dropdown
+                const dropdown = document.getElementById(dropdownId);
+                if (dropdown) {
+                  dropdown.style.display = "block";
+                  setActiveDropdown(dropdownId);
+                }
+                
+                // Add a click outside listener to close dropdown
+                setTimeout(() => {
+                  const closeDropdowns = (e: MouseEvent) => {
+                    const target = e.target as HTMLElement;
+                    if (!target.closest(`#${dropdownId}`) && !target.closest(`[data-dropdown-trigger="${dropdownId}"]`)) {
+                      const dropdown = document.getElementById(dropdownId);
+                      if (dropdown) dropdown.style.display = "none";
+                      document.removeEventListener('click', closeDropdowns);
+                    }
+                  };
+                  document.addEventListener('click', closeDropdowns);
+                }, 10);
+              };
+              
+              // Update the time in 24-hour format
+              const updateTime = (newHours12: number, newMinutes: number, newPeriod: string) => {
+                // Convert to 24-hour format
+                let newHours24 = newHours12;
+                if (newPeriod === "PM" && newHours12 < 12) {
+                  newHours24 = newHours12 + 12;
+                } else if (newPeriod === "AM" && newHours12 === 12) {
+                  newHours24 = 0;
+                }
+                
+                const newTime = `${newHours24.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+                field.onChange(newTime);
+                
+                // Close all dropdowns
+                ["hour-selector", "minute-selector", "period-selector"].forEach(id => {
+                  const element = document.getElementById(id);
+                  if (element) element.style.display = "none";
+                });
+                setActiveDropdown(null);
+              };
+              
+              return (
+                <FormItem>
+                  <FormLabel>Time</FormLabel>
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Hour Selector (12-hour format) */}
+                    <div className="relative">
+                      <Button
+                        variant="outline"
+                        type="button"
+                        data-dropdown-trigger="hour-selector"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleDropdown("hour-selector");
+                        }}
+                        className="w-full flex justify-between items-center"
+                      >
+                        <span>{hours12.toString().padStart(2, '0')}</span>
+                        <span className="text-xs text-muted-foreground">Hour</span>
+                      </Button>
+                      <div 
+                        id="hour-selector" 
+                        className="absolute z-50 mt-1 bg-popover rounded-md border shadow-md overflow-y-auto"
+                        style={{ display: "none", maxHeight: "200px", width: "100%" }}
+                      >
+                        <div className="p-1">
+                          {Array.from({length: 12}, (_, i) => i + 1).map((hour) => (
+                            <Button
+                              key={hour}
+                              variant="ghost"
+                              className="w-full justify-start rounded-sm font-normal"
+                              onClick={() => {
+                                updateTime(hour, minutes, period);
+                              }}
+                            >
+                              {hour.toString().padStart(2, '0')}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Minute Selector */}
+                    <div className="relative">
+                      <Button
+                        variant="outline"
+                        type="button"
+                        data-dropdown-trigger="minute-selector"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleDropdown("minute-selector");
+                        }}
+                        className="w-full flex justify-between items-center"
+                      >
+                        <span>{minutes.toString().padStart(2, '0')}</span>
+                        <span className="text-xs text-muted-foreground">Minute</span>
+                      </Button>
+                      <div 
+                        id="minute-selector" 
+                        className="absolute z-50 mt-1 bg-popover rounded-md border shadow-md overflow-y-auto"
+                        style={{ display: "none", maxHeight: "200px", width: "100%" }}
+                      >
+                        <div className="p-1">
+                          {Array.from({length: 60}, (_, i) => i).map((min) => (
+                            <Button
+                              key={min}
+                              variant="ghost"
+                              className="w-full justify-start rounded-sm font-normal"
+                              onClick={() => {
+                                updateTime(hours12, min, period);
+                              }}
+                            >
+                              {min.toString().padStart(2, '0')}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* AM/PM Selector */}
+                    <div className="relative">
+                      <Button
+                        variant="outline"
+                        type="button"
+                        data-dropdown-trigger="period-selector"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleDropdown("period-selector");
+                        }}
+                        className="w-full flex justify-between items-center"
+                      >
+                        <span>{period}</span>
+                        <span className="text-xs text-muted-foreground">AM/PM</span>
+                      </Button>
+                      <div 
+                        id="period-selector" 
+                        className="absolute z-50 mt-1 bg-popover rounded-md border shadow-md overflow-y-auto"
+                        style={{ display: "none", maxHeight: "200px", width: "100%" }}
+                      >
+                        <div className="p-1">
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start rounded-sm font-normal"
+                            onClick={() => {
+                              updateTime(hours12, minutes, "AM");
+                            }}
+                          >
+                            AM
+                          </Button>
+                          <Button
+                            variant="ghost" 
+                            className="w-full justify-start rounded-sm font-normal"
+                            onClick={() => {
+                              updateTime(hours12, minutes, "PM");
+                            }}
+                          >
+                            PM
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <FormDescription>
+                    Select hour, minute, and AM/PM
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              );
+            }}
+          />
+        </div>
+        
+        {/* Profile Selection */}
+        <div>
+          <FormField
+            control={form.control}
+            name="profile_id"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Time (24h format)</FormLabel>
+                <FormLabel>Configuration Profile</FormLabel>
                 <FormControl>
-                  <Input 
-                    placeholder="14:30" 
-                    {...field} 
+                  <ProfileSelector
+                    value={field.value}
+                    onChange={field.onChange}
                   />
                 </FormControl>
                 <FormDescription>
-                  Enter time in 24-hour format (e.g., 14:30 for 2:30 PM)
+                  Select the configuration profile to be installed on the scheduled time.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
         </div>
+        
+        {/* Device Filter */}
+        <div>
+          <FormField
+            control={form.control}
+            name="device_filter"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Device Filter (Optional)</FormLabel>
+                <FormControl>
+                  <DeviceFilterSelector
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Specify which devices should receive this profile. Leave empty to apply to all devices.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+        
+        {/* Schedule Type */}
+        <FormField
+          control={form.control}
+          name="schedule_type"
+          render={({ field }) => (
+            <FormItem className="space-y-3">
+              <FormLabel>Schedule Type</FormLabel>
+              <FormControl>
+                <RadioGroup
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  className="flex flex-col space-y-1"
+                >
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <RadioGroupItem value="one_time" />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      One-time Schedule
+                    </FormLabel>
+                  </FormItem>
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <RadioGroupItem value="recurring" />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      Recurring Schedule
+                    </FormLabel>
+                  </FormItem>
+                </RadioGroup>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         
         {/* Recurring Schedule Options */}
         {scheduleType === "recurring" && (
