@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow, differenceInMinutes } from "date-fns";
-import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle } from "lucide-react";
+import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle, Wifi } from "lucide-react";
 import { useDevices, useUpdateDeviceLocation } from "@/hooks/use-simplemdm";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -176,59 +176,6 @@ const Dashboard = () => {
   const [refreshingLocation, setRefreshingLocation] = useState<string | false>(false);
   const { toast } = useToast(); // Use the useToast hook
 
-  // Auto-refresh functionality
-  const toggleAutoRefresh = () => {
-    if (autoRefreshIntervalRef.current) {
-      // Turn off auto-refresh
-      clearInterval(autoRefreshIntervalRef.current);
-      autoRefreshIntervalRef.current = null;
-      
-      toast({
-        title: "Auto-Refresh Disabled",
-        description: "Dashboard auto-refresh has been turned off.",
-        duration: 3000,
-      });
-    } else {
-      // Turn on auto-refresh
-      const intervalMs = parseInt(autoRefreshInterval) * 1000;
-      
-      if (isNaN(intervalMs) || intervalMs < 5000) {
-        toast({
-          title: "Invalid Interval",
-          description: "Please select a valid refresh interval (minimum 5 seconds).",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-      
-      // First refresh immediately
-      handleManualRefresh();
-      
-      // Then set up the interval
-      autoRefreshIntervalRef.current = setInterval(() => {
-        console.log(`🔄 Auto-refreshing dashboard at ${new Date().toISOString()}`);
-        handleManualRefresh();
-      }, intervalMs);
-      
-      toast({
-        title: "Auto-Refresh Enabled",
-        description: `Dashboard will refresh every ${autoRefreshInterval} seconds.`,
-        duration: 3000,
-      });
-    }
-  };
-  
-  // Clean up auto-refresh interval on component unmount
-  useEffect(() => {
-    return () => {
-      if (autoRefreshIntervalRef.current) {
-        clearInterval(autoRefreshIntervalRef.current);
-        autoRefreshIntervalRef.current = null;
-      }
-    };
-  }, []);
-  
   
   // Use the SimpleMDM API hooks to get real device data
   const { 
@@ -292,43 +239,6 @@ const Dashboard = () => {
     // We only want to run this when the deviceData or policies change
   }, [devicesData?.data, policies, toast]);
   
-  // Add effect to continuously monitor device status (general info including IP)
-  useEffect(() => {
-    // Only run if we have device data and policies loaded
-    if (!devicesData?.data || policies.length === 0) return;
-    
-    // Initial processing of devices - create a map of current IP addresses
-    const processInitialDeviceData = async () => {
-      const newDeviceIpMap: Record<string, string | null> = {};
-      
-      // Process each device
-      for (const device of devicesData.data) {
-        const deviceId = device.id.toString();
-        const deviceIp = device.attributes.last_seen_ip;
-        
-        // Store the current IP for later comparison (even if null)
-        newDeviceIpMap[deviceId] = deviceIp || null;
-        
-        console.log(`Initial IP for device ${deviceId}: ${deviceIp || 'none'}`);
-      }
-      
-      // Update the IP map
-      setDeviceIpMap(newDeviceIpMap);
-    };
-    
-    // Process initial device data to create baseline
-    processInitialDeviceData();
-    
-    // Don't start automatic polling here - let user control it with the toggle button
-    
-    // Clean up interval on component unmount
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    };
-  }, [devicesData?.data, policies]);
 
 
 
