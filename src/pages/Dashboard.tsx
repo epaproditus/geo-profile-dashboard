@@ -229,13 +229,6 @@ const Dashboard = () => {
     };
   }, []);
   
-  // Check if IP monitoring is running
-  useEffect(() => {
-    // Check if we have an active interval for IP monitoring
-    const isActive = pollingIntervalRef.current !== null;
-    setIpMonitoringActive(isActive);
-  }, [pollingIntervalRef.current]);
-  
   
   // Use the SimpleMDM API hooks to get real device data
   const { 
