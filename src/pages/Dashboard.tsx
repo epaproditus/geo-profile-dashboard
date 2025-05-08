@@ -175,7 +175,6 @@ const Dashboard = () => {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [refreshingLocation, setRefreshingLocation] = useState<string | false>(false);
   const { toast } = useToast(); // Use the useToast hook
-  const { toast } = useToast();
 
   // Auto-refresh functionality
   const toggleAutoRefresh = () => {
