@@ -15,7 +15,6 @@ import { getLocationFromIp, getLocationFromIpSync, GeoLocation } from "@/lib/uti
 import profilePolicyService from "@/lib/services/profile-policy-service";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { checkAndMigrateData } from "@/lib/utils/migration";
 
 // Constants for localStorage keys and location staleness
 const POLICY_STORAGE_KEY = 'geo-profile-dashboard-policies';
@@ -191,11 +190,6 @@ const Dashboard = () => {
   // Load policies from localStorage on component mount and check for migration
   useEffect(() => {
     setPolicies(loadPoliciesFromLocalStorage());
-    
-    // Check if we need to migrate data from localStorage to Supabase
-    checkAndMigrateData().catch(err => {
-      console.error("Error checking/migrating data:", err);
-    });
   }, []);
   
   // Add effect to check for policy application when devices connect

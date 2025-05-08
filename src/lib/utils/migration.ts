@@ -1,5 +1,8 @@
+// DEPRECATED - This migration system is no longer used
+// Kept for historical reference only
+
 import { supabase } from "@/lib/supabase";
-import { toast } from "sonner";
+import { toast } from "sonner"; 
 import geofenceService, { Geofence } from "../services/geofence-service";
 
 // Constants for localStorage keys
