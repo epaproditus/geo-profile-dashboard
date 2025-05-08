@@ -816,23 +816,6 @@ const Dashboard = () => {
                   Devices
                 </a>
               </Button>
-              <Button 
-                variant={ipMonitoringActive ? "destructive" : "outline"} 
-                size="sm" 
-                onClick={toggleIpMonitoring}
-              >
-                {ipMonitoringActive ? (
-                  <>
-                    <Wifi className="h-4 w-4 mr-2" />
-                    Stop Monitoring
-                  </>
-                ) : (
-                  <>
-                    <Wifi className="h-4 w-4 mr-2" />
-                    Start Monitoring
-                  </>
-                )}
-              </Button>
             </div>
           </div>
           
