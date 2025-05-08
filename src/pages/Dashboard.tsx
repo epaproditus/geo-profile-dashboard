@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import AuthCheck from "@/components/AuthCheck";
 import Navbar from "@/components/Navbar";
 import Map from "@/components/Map";
@@ -6,14 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow, differenceInMinutes } from "date-fns";
-import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle, MapPinOff, Wifi, Clock } from "lucide-react";
+import { MapPin, Smartphone, Shield, RefreshCw, AlertCircle } from "lucide-react";
 import { useDevices, useUpdateDeviceLocation } from "@/hooks/use-simplemdm";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isIpInRange } from "@/lib/utils";
 import { getLocationFromIp, getLocationFromIpSync, GeoLocation } from "@/lib/utils/ip-geolocation";
 import profilePolicyService from "@/lib/services/profile-policy-service";
-import { useQueryClient } from '@tanstack/react-query';
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { checkAndMigrateData } from "@/lib/utils/migration";
@@ -176,23 +175,7 @@ const Dashboard = () => {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [refreshingLocation, setRefreshingLocation] = useState<string | false>(false);
   const { toast } = useToast(); // Use the useToast hook
-  const queryClient = useQueryClient(); // Get query client for cache invalidation
-  
-  // Auto-refresh configuration
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState("60"); // Default to 1 minute (60 seconds)
-  const autoRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Store device IP addresses to detect changes
-  const [deviceIpMap, setDeviceIpMap] = useState<Record<string, string>>({});
-  
-  // Polling interval reference for cleanup
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Configure how often we check for IP changes (in milliseconds)
-  const IP_CHECK_INTERVAL_MS = 30000; // Check every 30 seconds
-  
-  // Show monitoring status in the Dashboard
-  const [ipMonitoringActive, setIpMonitoringActive] = useState(false);
+  const { toast } = useToast();
 
   // Auto-refresh functionality
   const toggleAutoRefresh = () => {
@@ -254,159 +237,6 @@ const Dashboard = () => {
     setIpMonitoringActive(isActive);
   }, [pollingIntervalRef.current]);
   
-  // Function to toggle IP monitoring on/off
-  const toggleIpMonitoring = () => {
-    const queryClient = useQueryClient(); // Get query client for cache invalidation
-    
-    if (ipMonitoringActive && pollingIntervalRef.current) {
-      // Turn off monitoring
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-      setIpMonitoringActive(false);
-      
-      toast({
-        title: "Network Monitoring Disabled",
-        description: "Real-time network monitoring has been turned off.",
-        duration: 3000,
-      });
-      console.log('🛑 IP address monitoring STOPPED');
-    } else {
-      console.log('🚀 Starting IP monitoring with improved detection...');
-      
-      // Start with an immediate check
-      const checkImmediately = async () => {
-        if (!devicesData?.data) {
-          console.log('⚠️ No device data available for initial check');
-          return;
-        }
-        
-        console.log('📡 IMMEDIATE CHECK: Making initial API call...');
-        
-        // Force a device to connect by requesting a location update for one device
-        const firstDevice = devicesData.data[0];
-        if (firstDevice) {
-          try {
-            console.log(`📱 Requesting location update for device ${firstDevice.id} (${firstDevice.attributes.name})`);
-            await updateDeviceLocation.mutateAsync(firstDevice.id);
-            console.log('✅ Initial location update completed');
-          } catch (err) {
-            console.error('❌ Initial location update failed:', err);
-          }
-        }
-        
-        // Now fetch fresh data to get current IP addresses
-        console.log('📊 Fetching initial device data...');
-        const freshData = await refetchDevices();
-        
-        if (freshData?.data?.data) {
-          // Create initial IP map from fresh data
-          const newDeviceIpMap: Record<string, string> = {};
-          freshData.data.data.forEach(device => {
-            const deviceId = device.id.toString();
-            const deviceIp = device.attributes.last_seen_ip;
-            if (deviceIp) {
-              newDeviceIpMap[deviceId] = deviceIp;
-              console.log(`📌 BASELINE: Device ${deviceId} (${device.attributes.name}) has IP: ${deviceIp}`);
-            } else {
-              console.log(`⚠️ BASELINE: Device ${deviceId} (${device.attributes.name}) has NO IP address in the response`);
-            }
-          });
-          
-          // Store initial IPs
-          setDeviceIpMap(newDeviceIpMap);
-        }
-      };
-      
-      // Run the immediate check
-      checkImmediately();
-      
-      // Set up the regular interval with a shorter, more reliable check
-      console.log(`🔄 Setting up regular interval to check every ${IP_CHECK_INTERVAL_MS/1000} seconds`);
-      
-      // Use a simpler approach that's more likely to fire reliably
-      pollingIntervalRef.current = setInterval(() => {
-        const timestamp = new Date().toISOString();
-        console.log(`⏰ INTERVAL FIRED at ${timestamp}`);
-        
-        // Just do a simple refetch to check if interval is working
-        refetchDevices()
-          .then(freshData => {
-            console.log('📊 Got fresh device data at', new Date().toISOString());
-            
-            if (!freshData?.data?.data) {
-              console.log('❌ No device data in response');
-              return;
-            }
-            
-            // Log the device count to confirm we got data
-            console.log(`📱 Retrieved ${freshData.data.data.length} devices`);
-            
-            // Check each device for IP changes
-            freshData.data.data.forEach(device => {
-              const deviceId = device.id.toString();
-              const deviceName = device.attributes.name;
-              const currentIp = device.attributes.last_seen_ip;
-              const previousIp = deviceIpMap[deviceId];
-              
-              console.log(`🔄 Device ${deviceId} (${deviceName}):`);
-              console.log(`   - Previous stored IP: ${previousIp || 'none'}`);
-              console.log(`   - Current API IP: ${currentIp || 'none'}`);
-              
-              // Skip devices without an IP
-              if (!currentIp) return;
-              
-              // Check if the IP has changed
-              if (currentIp !== previousIp) {
-                console.log(`🔔 IP CHANGE DETECTED: Device ${deviceId} (${deviceName}) IP changed from ${previousIp || 'none'} to ${currentIp}`);
-                
-                // Update the stored IP
-                setDeviceIpMap(prev => ({
-                  ...prev,
-                  [deviceId]: currentIp
-                }));
-                
-                // Force a global refetch of device data to update the UI
-                queryClient.invalidateQueries({ queryKey: ['devices'] });
-                
-                // Process the IP change
-                profilePolicyService.processDeviceConnection(deviceId, currentIp)
-                  .then(result => {
-                    if (result.policyApplied) {
-                      let description = `Applied ${result.profilesPushed} profile(s) from "${result.policyName}" policy to device "${deviceName}"`;
-                      
-                      if (result.profilesRemoved && result.profilesRemoved > 0) {
-                        description += ` and removed ${result.profilesRemoved} outdated profile(s)`;
-                      }
-                      
-                      description += ` based on new IP address.`;
-                      
-                      toast({
-                        title: "Network Change Detected",
-                        description: description,
-                        duration: 5000,
-                      });
-                    }
-                  })
-                  .catch(error => {
-                    console.error(`❌ Error processing device ${deviceId} IP change:`, error);
-                  });
-              }
-            });
-          })
-          .catch(error => {
-            console.error('❌ Error fetching devices:', error);
-          });
-      }, IP_CHECK_INTERVAL_MS);
-      
-      setIpMonitoringActive(true);
-      
-      toast({
-        title: "Network Monitoring Enabled",
-        description: `Monitoring enabled. Checking device IP addresses every ${IP_CHECK_INTERVAL_MS/1000} seconds.`,
-        duration: 5000,
-      });
-    }
-  };
   
   // Use the SimpleMDM API hooks to get real device data
   const { 
@@ -508,68 +338,7 @@ const Dashboard = () => {
     };
   }, [devicesData?.data, policies]);
 
-  // Add a manual refresh button to sync UI with actual policy status
-  const handleManualRefresh = async () => {
-    // Force refresh the device data
-    await refetchDevices();
-    
-    // Reload policies from localStorage (in case they were updated elsewhere)
-    setPolicies(loadPoliciesFromLocalStorage());
-    
-    toast({
-      title: "Dashboard Refreshed",
-      description: "Device and policy information has been updated.",
-      duration: 3000,
-    });
-  };
 
-  // Start auto-refresh when the component mounts
-  useEffect(() => {
-    // Set up auto-refresh immediately when component loads
-    const startAutoRefresh = () => {
-      const intervalMs = parseInt(autoRefreshInterval) * 1000;
-      
-      // First refresh immediately
-      handleManualRefresh();
-      
-      // Then set up the interval
-      autoRefreshIntervalRef.current = setInterval(() => {
-        console.log(`🔄 Auto-refreshing dashboard at ${new Date().toISOString()}`);
-        handleManualRefresh();
-      }, intervalMs);
-      
-      console.log(`🔄 Auto-refresh enabled with ${intervalMs/1000} second interval`);
-    };
-    
-    // Start auto-refresh now
-    startAutoRefresh();
-    
-    // Clean up when unmounting
-    return () => {
-      if (autoRefreshIntervalRef.current) {
-        clearInterval(autoRefreshIntervalRef.current);
-        autoRefreshIntervalRef.current = null;
-      }
-    };
-  }, []); // Empty dependency array so it only runs once on mount
-  
-  // Update refresh interval when the selected interval changes
-  useEffect(() => {
-    // If we already have an active interval, restart it with the new timing
-    if (autoRefreshIntervalRef.current) {
-      // Clear the existing interval
-      clearInterval(autoRefreshIntervalRef.current);
-      
-      // Create a new one with the updated interval
-      const intervalMs = parseInt(autoRefreshInterval) * 1000;
-      autoRefreshIntervalRef.current = setInterval(() => {
-        console.log(`🔄 Auto-refreshing dashboard at ${new Date().toISOString()}`);
-        handleManualRefresh();
-      }, intervalMs);
-      
-      console.log(`🔄 Auto-refresh interval updated to ${intervalMs/1000} seconds`);
-    }
-  }, [autoRefreshInterval]); // Run when the interval selection changes
 
   // Format devices from the API response
   const formattedDevices = devicesData?.data?.map(device => {
