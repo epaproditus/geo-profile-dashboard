@@ -17,7 +17,8 @@ import {
   LogOut, 
   Menu,
   User,
-  AppWindow
+  AppWindow,
+  CalendarClock
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { signOut, getCurrentUser } from '../lib/supabase';
@@ -44,6 +45,7 @@ const Navbar = () => {
     { path: "/geofences", label: "Geofences", icon: <MapPin className="h-4 w-4 mr-2" /> },
     { path: "/devices", label: "Devices", icon: <Smartphone className="h-4 w-4 mr-2" /> },
     { path: "/profiles", label: "Profiles", icon: <Settings className="h-4 w-4 mr-2" /> },
+    { path: "/schedules", label: "Schedules", icon: <CalendarClock className="h-4 w-4 mr-2" /> },
     { path: "/app-catalog", label: "App Catalog", icon: <AppWindow className="h-4 w-4 mr-2" /> },
   ];
 
