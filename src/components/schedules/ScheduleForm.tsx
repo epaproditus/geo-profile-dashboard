@@ -23,13 +23,14 @@ import { useSchedule, useCreateSchedule, useUpdateSchedule } from "@/hooks/use-s
 import { useAllProfiles } from "@/hooks/use-simplemdm";
 import ProfileSelector from "@/components/schedules/ProfileSelector";
 import DeviceFilterSelector from "@/components/schedules/DeviceFilterSelector";
+import { MultiProfileSelector } from "@/components/schedules/ProfileSelector";
 
 // Form validation schema
 const scheduleFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   enabled: z.boolean().default(true),
-  profile_id: z.string().min(1, "Profile is required"),
+  profile_ids: z.array(z.string()).min(1, "At least one profile is required"),
   device_filter: z.string().optional(),
   schedule_type: z.enum(["one_time", "recurring"]),
   start_date: z.date({
@@ -102,6 +103,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
       name: "",
       description: "",
       enabled: true,
+      profile_ids: [],
       device_filter: "",
       schedule_type: "one_time",
       start_date: addDays(new Date(), 1),
@@ -117,11 +119,14 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         const startDateTime = parseISO(existingSchedule.start_time);
         
         if (isValid(startDateTime)) {
+          // Convert single profile_id to array for multi-select
+          const profileIds = existingSchedule.profile_id ? [existingSchedule.profile_id.toString()] : [];
+          
           form.reset({
             name: existingSchedule.name,
             description: existingSchedule.description || "",
             enabled: existingSchedule.enabled,
-            profile_id: existingSchedule.profile_id,
+            profile_ids: profileIds,
             device_filter: existingSchedule.device_filter || "",
             schedule_type: existingSchedule.schedule_type as "one_time" | "recurring",
             start_date: startDateTime,
@@ -154,31 +159,51 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         seconds: 0,
         milliseconds: 0,
       });
-      
-      // Prepare data for submission
-      const scheduleData = {
-        name: values.name,
-        description: values.description,
-        enabled: values.enabled,
-        profile_id: values.profile_id,
-        device_filter: values.device_filter || null,
-        schedule_type: values.schedule_type,
-        start_time: startDateTime.toISOString(),
-        recurrence_pattern: values.schedule_type === "recurring" ? values.recurrence_pattern : null,
-        days_of_week: values.days_of_week && values.days_of_week.length > 0 
-          ? JSON.stringify(values.days_of_week) 
-          : null,
-        day_of_month: values.day_of_month || null,
-      };
-      
-      // Create or update
-      if (isEditMode && scheduleId) {
-        await updateSchedule.mutateAsync({
-          id: scheduleId,
-          ...scheduleData,
+
+      if (values.profile_ids.length === 0) {
+        form.setError("profile_ids", {
+          type: "manual",
+          message: "Please select at least one profile"
         });
-      } else {
-        await createSchedule.mutateAsync(scheduleData);
+        return;
+      }
+      
+      // For each profile, create a separate schedule
+      for (const profileId of values.profile_ids) {
+        // Prepare data for submission
+        const scheduleData = {
+          name: values.profile_ids.length > 1 
+            ? `${values.name} - ${profileId}` 
+            : values.name,
+          description: values.description,
+          enabled: values.enabled,
+          profile_id: profileId,
+          device_filter: values.device_filter || null,
+          schedule_type: values.schedule_type,
+          start_time: startDateTime.toISOString(),
+          recurrence_pattern: values.schedule_type === "recurring" ? values.recurrence_pattern : null,
+          days_of_week: values.days_of_week && values.days_of_week.length > 0 
+            ? JSON.stringify(values.days_of_week) 
+            : null,
+          day_of_month: values.day_of_month || null,
+        };
+        
+        // Create or update
+        if (isEditMode && scheduleId) {
+          // In edit mode, we're only updating a single schedule entry
+          if (profileId === values.profile_ids[0]) {
+            await updateSchedule.mutateAsync({
+              id: scheduleId,
+              ...scheduleData,
+            });
+          } else {
+            // For additional profiles, create new schedules
+            await createSchedule.mutateAsync(scheduleData);
+          }
+        } else {
+          // Create a new schedule for each profile
+          await createSchedule.mutateAsync(scheduleData);
+        }
       }
       
       onSuccess();
@@ -205,6 +230,66 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             }
           </span>
         </div>
+        
+        {/* Enabled Switch - Moved to top */}
+        <FormField
+          control={form.control}
+          name="enabled"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+              <div className="space-y-0.5">
+                <FormLabel className="text-base">
+                  Schedule Status
+                </FormLabel>
+                <FormDescription>
+                  Enable or disable this schedule
+                </FormDescription>
+              </div>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+        
+        {/* Schedule Type - Moved up */}
+        <FormField
+          control={form.control}
+          name="schedule_type"
+          render={({ field }) => (
+            <FormItem className="space-y-3">
+              <FormLabel>Schedule Type</FormLabel>
+              <FormControl>
+                <RadioGroup
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  className="flex flex-col space-y-1"
+                >
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <RadioGroupItem value="one_time" />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      One-time Schedule
+                    </FormLabel>
+                  </FormItem>
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <RadioGroupItem value="recurring" />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      Recurring Schedule
+                    </FormLabel>
+                  </FormItem>
+                </RadioGroup>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         
         {/* Basic Information */}
         <div className="space-y-4">
@@ -240,42 +325,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             )}
           />
         </div>
-        
-        {/* Schedule Type */}
-        <FormField
-          control={form.control}
-          name="schedule_type"
-          render={({ field }) => (
-            <FormItem className="space-y-3">
-              <FormLabel>Schedule Type</FormLabel>
-              <FormControl>
-                <RadioGroup
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                  className="flex flex-col space-y-1"
-                >
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl>
-                      <RadioGroupItem value="one_time" />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      One-time Schedule
-                    </FormLabel>
-                  </FormItem>
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl>
-                      <RadioGroupItem value="recurring" />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      Recurring Schedule
-                    </FormLabel>
-                  </FormItem>
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
         
         {/* Date and Time Picker */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -324,7 +373,13 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                         const cal = document.getElementById("date-picker-calendar");
                         if (cal) cal.style.display = "none";
                       }}
-                      disabled={(date) => date < new Date()}
+                      disabled={(date) => {
+                        // Allow today's date by comparing with start of previous day
+                        const yesterday = new Date();
+                        yesterday.setDate(yesterday.getDate() - 1);
+                        yesterday.setHours(23, 59, 59, 999);
+                        return date < yesterday;
+                      }}
                       initialFocus
                     />
                   </div>
@@ -349,8 +404,8 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
               
               // Function to toggle a dropdown and close all others
               const toggleDropdown = (dropdownId: string) => {
-                // Close all dropdowns first
-                ["hour-selector", "minute-selector", "period-selector", "date-picker-calendar"].forEach(id => {
+                // Close all other dropdowns first
+                ["hour-selector", "minute-selector", "period-selector", "date-picker-calendar", "profile-selector-dropdown", "device-filter-dropdown"].forEach(id => {
                   const element = document.getElementById(id);
                   if (element) element.style.display = "none";
                 });
@@ -412,7 +467,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                           e.stopPropagation();
                           toggleDropdown("hour-selector");
                         }}
-                        className="w-full flex justify-between items-center"
+                        className="w-full h-10 flex justify-between items-center"
                       >
                         <span>{hours12.toString().padStart(2, '0')}</span>
                         <span className="text-xs text-muted-foreground">Hour</span>
@@ -427,8 +482,11 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                             <Button
                               key={hour}
                               variant="ghost"
+                              type="button"
                               className="w-full justify-start rounded-sm font-normal"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 updateTime(hour, minutes, period);
                               }}
                             >
@@ -450,7 +508,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                           e.stopPropagation();
                           toggleDropdown("minute-selector");
                         }}
-                        className="w-full flex justify-between items-center"
+                        className="w-full h-10 flex justify-between items-center"
                       >
                         <span>{minutes.toString().padStart(2, '0')}</span>
                         <span className="text-xs text-muted-foreground">Minute</span>
@@ -465,8 +523,11 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                             <Button
                               key={min}
                               variant="ghost"
+                              type="button"
                               className="w-full justify-start rounded-sm font-normal"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 updateTime(hours12, min, period);
                               }}
                             >
@@ -488,7 +549,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                           e.stopPropagation();
                           toggleDropdown("period-selector");
                         }}
-                        className="w-full flex justify-between items-center"
+                        className="w-full h-10 flex justify-between items-center"
                       >
                         <span>{period}</span>
                         <span className="text-xs text-muted-foreground">AM/PM</span>
@@ -501,8 +562,11 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                         <div className="p-1">
                           <Button
                             variant="ghost"
+                            type="button"
                             className="w-full justify-start rounded-sm font-normal"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
                               updateTime(hours12, minutes, "AM");
                             }}
                           >
@@ -510,8 +574,11 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                           </Button>
                           <Button
                             variant="ghost" 
+                            type="button"
                             className="w-full justify-start rounded-sm font-normal"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
                               updateTime(hours12, minutes, "PM");
                             }}
                           >
@@ -535,18 +602,18 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         <div>
           <FormField
             control={form.control}
-            name="profile_id"
+            name="profile_ids"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Configuration Profile</FormLabel>
+                <FormLabel>Configuration Profiles</FormLabel>
                 <FormControl>
-                  <ProfileSelector
+                  <MultiProfileSelector
                     value={field.value}
                     onChange={field.onChange}
                   />
                 </FormControl>
                 <FormDescription>
-                  Select the configuration profile to be installed on the scheduled time.
+                  Select configuration profiles to be installed on the scheduled time.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -576,42 +643,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             )}
           />
         </div>
-        
-        {/* Schedule Type */}
-        <FormField
-          control={form.control}
-          name="schedule_type"
-          render={({ field }) => (
-            <FormItem className="space-y-3">
-              <FormLabel>Schedule Type</FormLabel>
-              <FormControl>
-                <RadioGroup
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                  className="flex flex-col space-y-1"
-                >
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl>
-                      <RadioGroupItem value="one_time" />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      One-time Schedule
-                    </FormLabel>
-                  </FormItem>
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl>
-                      <RadioGroupItem value="recurring" />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      Recurring Schedule
-                    </FormLabel>
-                  </FormItem>
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
         
         {/* Recurring Schedule Options */}
         {scheduleType === "recurring" && (
@@ -720,30 +751,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             )}
           </div>
         )}
-        
-        {/* Enabled Switch */}
-        <FormField
-          control={form.control}
-          name="enabled"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <FormLabel className="text-base">
-                  Schedule Status
-                </FormLabel>
-                <FormDescription>
-                  Enable or disable this schedule
-                </FormDescription>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
         
         {/* Form Actions */}
         <div className="flex justify-end space-x-2">
