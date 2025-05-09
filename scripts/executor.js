@@ -195,17 +195,19 @@ async function executeSchedules() {
     const now = new Date();
     // Look for schedules that should have run in the last 15 minutes
     const pastWindow = new Date(now.getTime() - 15 * 60 * 1000);
+    // Also look for schedules coming up in the next 5 minutes
+    const futureWindow = new Date(now.getTime() + 5 * 60 * 1000);
     
-    log(`Looking for schedules due between ${pastWindow.toISOString()} and ${now.toISOString()}`);
+    log(`Looking for schedules due between ${pastWindow.toISOString()} and ${futureWindow.toISOString()}`);
     
     const { data: schedulesToExecute, error: schedulesError } = await supabase
       .from('schedules')
       .select('*')
       .eq('enabled', true)
-      .lte('start_time', now.toISOString())
+      .lte('start_time', futureWindow.toISOString())
       .gt('start_time', pastWindow.toISOString())
       .is('last_executed_at', null)
-      .order('start_time', { ascending: true });
+      .order('start_time', { ascending: true});
     
     if (schedulesError) {
       log(`Error fetching schedules: ${schedulesError.message}`);
