@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// filepath: scripts/executor.js
 
 import { createClient } from '@supabase/supabase-js';
+import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import fs from 'fs';
 
@@ -19,6 +19,125 @@ function log(message) {
     fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
   } catch (err) {
     console.error(`Could not write to log file: ${err.message}`);
+  }
+}
+
+// Function to call SimpleMDM API
+async function callSimpleMDM(endpoint, method = 'GET', data = null) {
+  const apiKey = process.env.SIMPLEMDM_API_KEY;
+  if (!apiKey) {
+    throw new Error('SimpleMDM API key is missing');
+  }
+  
+  const baseUrl = 'https://a.simplemdm.com/api/v1';
+  const url = `${baseUrl}/${endpoint}`;
+  
+  log(`Calling SimpleMDM API: ${method} ${endpoint}`);
+  
+  const options = {
+    method,
+    headers: {
+      'Authorization': `Basic ${Buffer.from(apiKey + ':').toString('base64')}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    }
+  };
+  
+  if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+    options.body = JSON.stringify(data);
+  }
+  
+  try {
+    const response = await fetch(url, options);
+    const responseData = await response.json();
+    
+    if (!response.ok) {
+      log(`SimpleMDM API error: ${response.status} - ${JSON.stringify(responseData)}`);
+      throw new Error(`SimpleMDM API error: ${response.status}`);
+    }
+    
+    return responseData;
+  } catch (error) {
+    log(`SimpleMDM API call failed: ${error.message}`);
+    throw error;
+  }
+}
+
+// Function to execute a device update based on schedule type
+async function executeDeviceAction(schedule) {
+  if (!schedule.action_type) {
+    log(`No action_type specified for schedule ${schedule.id}`);
+    return { success: false, message: 'No action_type specified' };
+  }
+  
+  try {
+    switch (schedule.action_type) {
+      case 'update_os':
+        // Get devices in group
+        const deviceGroupId = schedule.device_group_id;
+        if (!deviceGroupId) {
+          return { success: false, message: 'No device_group_id specified for update_os action' };
+        }
+        
+        log(`Getting devices for group ${deviceGroupId}`);
+        const groupResponse = await callSimpleMDM(`device_groups/${deviceGroupId}/devices`);
+        
+        if (!groupResponse.data || groupResponse.data.length === 0) {
+          log(`No devices found in group ${deviceGroupId}`);
+          return { success: true, message: 'No devices in group to update' };
+        }
+        
+        log(`Found ${groupResponse.data.length} devices in group ${deviceGroupId}`);
+        
+        // Update each device
+        for (const device of groupResponse.data) {
+          log(`Sending update request to device ${device.id} (${device.name})`);
+          await callSimpleMDM(`devices/${device.id}/update_os`, 'POST');
+        }
+        
+        return { 
+          success: true, 
+          message: `OS update initiated for ${groupResponse.data.length} devices in group ${deviceGroupId}`,
+          devices: groupResponse.data.map(d => ({ id: d.id, name: d.name }))
+        };
+        
+      case 'push_apps':
+        // Similar implementation for pushing apps
+        const groupId = schedule.device_group_id;
+        if (!groupId) {
+          return { success: false, message: 'No device_group_id specified for push_apps action' };
+        }
+        
+        log(`Pushing apps to devices in group ${groupId}`);
+        await callSimpleMDM(`device_groups/${groupId}/push_apps`, 'POST');
+        
+        return { success: true, message: `Apps push initiated for device group ${groupId}` };
+        
+      case 'custom_command':
+        // Execute custom command
+        if (!schedule.command_data) {
+          return { success: false, message: 'No command_data specified for custom_command action' };
+        }
+        
+        const targetGroupId = schedule.device_group_id;
+        if (!targetGroupId) {
+          return { success: false, message: 'No device_group_id specified for custom_command action' };
+        }
+        
+        log(`Executing custom command for group ${targetGroupId}: ${schedule.command_data.substring(0, 50)}...`);
+        await callSimpleMDM(`device_groups/${targetGroupId}/custom_commands`, 'POST', {
+          command: schedule.command_data
+        });
+        
+        return { success: true, message: `Custom command executed for device group ${targetGroupId}` };
+        
+      default:
+        log(`Unknown action_type: ${schedule.action_type}`);
+        return { success: false, message: `Unknown action_type: ${schedule.action_type}` };
+    }
+  } catch (error) {
+    log(`Error executing action ${schedule.action_type}: ${error.message}`);
+    return { success: false, message: `Error: ${error.message}` };
   }
 }
 
@@ -79,30 +198,53 @@ async function executeSchedules() {
     
     log(`Found ${schedulesToExecute.length} schedules to execute`);
     
-    // Execute each schedule (simplified for testing)
+    // Execute each schedule
     const results = await Promise.all(schedulesToExecute.map(async (schedule) => {
       try {
         log(`Executing schedule ${schedule.id}`);
         
-        // Update execution time
+        // Execute the appropriate action based on schedule type
+        const actionResult = await executeDeviceAction(schedule);
+        
+        // Update execution time in the database
         const { error: updateError } = await supabase
           .from('schedules')
-          .update({ last_executed_at: now.toISOString() })
+          .update({ 
+            last_executed_at: now.toISOString(),
+            last_execution_status: actionResult.success ? 'success' : 'failed',
+            last_execution_result: JSON.stringify(actionResult)
+          })
           .eq('id', schedule.id);
         
         if (updateError) {
           throw new Error(`Failed to update schedule: ${updateError.message}`);
         }
         
-        log(`Successfully marked schedule ${schedule.id} as executed`);
+        log(`Successfully executed schedule ${schedule.id}: ${actionResult.message}`);
         
         return {
           scheduleId: schedule.id,
-          success: true,
-          message: `Schedule ${schedule.id} marked as executed`
+          success: actionResult.success,
+          message: actionResult.message,
+          details: actionResult
         };
       } catch (scheduleError) {
         log(`Error executing schedule ${schedule.id}: ${scheduleError.message}`);
+        
+        // Try to update the schedule with error information
+        try {
+          await supabase
+            .from('schedules')
+            .update({ 
+              last_executed_at: now.toISOString(),
+              last_execution_status: 'error',
+              last_execution_result: JSON.stringify({ error: scheduleError.message })
+            })
+            .eq('id', schedule.id);
+        } catch (dbError) {
+          log(`Failed to update schedule with error status: ${dbError.message}`);
+        }
+        
         return {
           scheduleId: schedule.id,
           success: false,
