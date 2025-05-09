@@ -4,6 +4,38 @@
 
 **URL**: https://lovable.dev/projects/1aa21081-1230-4b6f-96da-12cb197da7d3
 
+## Deployment Solution
+
+The geo-profile-dashboard now includes a complete deployment solution for VPS hosting with scheduled execution of profiles via SimpleMDM API. Key features:
+
+- **Express Server**: Replaces Vercel functions with a standard Express server
+- **Scheduler**: Uses cron jobs to run schedules at specified times
+- **Cloudflare Tunnel**: Provides secure access without exposing ports
+- **PM2 Process Management**: Ensures the application stays running
+- **Comprehensive Documentation**: Includes detailed deployment guides
+
+### Deployment Documents
+
+- [Deployment Guide](DEPLOYMENT.md) - Step-by-step deployment instructions
+- [Deployment Checklist](DEPLOYMENT_CHECKLIST.md) - Comprehensive setup checklist
+- [Cron Setup Guide](CRON_SETUP.md) - Details on setting up cron jobs
+- [Monitoring Guide](MONITORING.md) - Guidance on monitoring and maintenance
+
+### Quick Installation
+
+For a quick installation on your VPS (requires root access):
+
+```bash
+# Download the installer
+wget -O install.sh https://raw.githubusercontent.com/your-username/geo-profile-dashboard/main/install.sh
+
+# Make it executable
+chmod +x install.sh
+
+# Run the installer
+sudo ./install.sh
+```
+
 ## How can I edit this code?
 
 There are several ways of editing your application.

@@ -1,0 +1,8 @@
+# Run the geo-profile-dashboard scheduler every 5 minutes
+*/5 * * * * /var/www/geo-profile-dashboard/run-scheduler.sh
+
+# Restart the server daily at 3 AM (optional)
+0 3 * * * /usr/bin/pm2 restart geo-profile-app
+
+# Log rotation for scheduler logs (optional)
+0 0 * * 0 /usr/bin/find /var/log/schedule-executor.log -size +100M -exec truncate -s 0 {} \;

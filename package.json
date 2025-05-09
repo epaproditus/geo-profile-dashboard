@@ -13,7 +13,8 @@
     "supabase:migration:new": "node scripts/create-migration.js",
     "server": "node server.js",
     "start": "npm run build && node server.js",
-    "execute-schedules": "node scripts/direct-execute.js"
+    "execute-schedules": "node scripts/executor.js",
+    "test-executor": "./test-executor.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

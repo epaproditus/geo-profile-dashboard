@@ -7,6 +7,7 @@ module.exports = {
         NODE_ENV: "production",
         PORT: 3000
       },
+      node_args: "--experimental-json-modules",
       env_production: {
         NODE_ENV: "production"
       },
