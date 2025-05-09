@@ -218,10 +218,41 @@ async function executeSchedules() {
       return { message: 'No schedules to execute' };
     }
     
-    log(`Found ${schedulesToExecute.length} schedules to execute`);
+    // Filter out invalid schedules (those without an action_type)
+    const validSchedules = schedulesToExecute.filter(schedule => schedule.action_type);
+    const invalidSchedules = schedulesToExecute.filter(schedule => !schedule.action_type);
+    
+    // Mark invalid schedules as executed with an error
+    if (invalidSchedules.length > 0) {
+      log(`Found ${invalidSchedules.length} invalid schedules without action_type`);
+      
+      await Promise.all(invalidSchedules.map(async (schedule) => {
+        try {
+          const { error: updateError } = await supabase
+            .from('schedules')
+            .update({ 
+              last_executed_at: now.toISOString()
+              // Status and result columns commented out until they are added to the schema
+              // last_execution_status: 'invalid',
+              // last_execution_result: JSON.stringify({ error: 'No action_type specified' })
+            })
+            .eq('id', schedule.id);
+          
+          if (updateError) {
+            log(`Failed to mark invalid schedule ${schedule.id}: ${updateError.message}`);
+          } else {
+            log(`Marked invalid schedule ${schedule.id} as executed with error`);
+          }
+        } catch (error) {
+          log(`Error handling invalid schedule ${schedule.id}: ${error.message}`);
+        }
+      }));
+    }
+    
+    log(`Found ${validSchedules.length} valid schedules to execute`);
     
     // Execute each schedule
-    const results = await Promise.all(schedulesToExecute.map(async (schedule) => {
+    const results = await Promise.all(validSchedules.map(async (schedule) => {
       try {
         log(`Executing schedule ${schedule.id}`);
         
