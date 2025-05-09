@@ -3,18 +3,13 @@
 
 /**
  * This script can be run via a cron job or scheduler to execute pending schedules.
- * It calls the /api/schedules/execute endpoint to check and execute due schedules.
- * 
- * Example cron job:
- * */5 * * * * /path/to/node /path/to/execute-schedules.js
- * 
- * This would run every 5 minutes
  */
 
 const https = require('https');
 const http = require('http');
 require('dotenv').config();
 
+// Use your actual production URL when deployed
 const apiUrl = process.env.API_URL || 'http://localhost:3000';
 const apiKey = process.env.SCHEDULE_EXECUTOR_API_KEY;
 
@@ -65,11 +60,19 @@ const req = client.request(url, options, (res) => {
       console.error('Error parsing response:', e);
       console.error('Raw response:', data);
     }
+    
+    // Log to a file for debugging
+    const fs = require('fs');
+    fs.appendFileSync('/var/log/schedule-executor.log', 
+      `[${new Date().toISOString()}] Status: ${res.statusCode}, Response: ${data}\n`);
   });
 });
 
 req.on('error', (error) => {
   console.error('Error calling execute endpoint:', error);
+  const fs = require('fs');
+  fs.appendFileSync('/var/log/schedule-executor.log', 
+    `[${new Date().toISOString()}] ERROR: ${error.message}\n`);
 });
 
 req.end();
