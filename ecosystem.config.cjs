@@ -2,20 +2,17 @@ module.exports = {
   apps: [
     {
       name: "geo-profile-app",
-      script: "server.js",
+      script: "npm",
+      args: "run preview",
       env: {
         NODE_ENV: "production",
-        PORT: 3000
+        PORT: "8080"
       },
-      node_args: "--experimental-json-modules",
-      env_production: {
-        NODE_ENV: "production"
-      },
+      env_file: ".env",  // This tells PM2 to load variables from .env
       watch: false,
-      instances: 1,
-      exec_mode: "fork",
-      autorestart: true,
-      max_restarts: 10
+      max_memory_restart: "500M",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true
     }
   ]
 };
