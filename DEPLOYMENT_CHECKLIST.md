@@ -22,13 +22,20 @@
 ## Scheduler Setup
 - [ ] Made `run-scheduler.sh` executable with `chmod +x run-scheduler.sh`
 - [ ] Made `scripts/executor.js` executable with `chmod +x scripts/executor.js`
-- [ ] Created log file `touch /var/log/schedule-executor.log`
-- [ ] Set proper permissions on log file `chmod 644 /var/log/schedule-executor.log`
-- [ ] Added cron job to root crontab `sudo crontab -e`
+- [ ] Made `rotate-logs.sh` executable with `chmod +x rotate-logs.sh`
+- [ ] Made `backup-db.sh` executable with `chmod +x backup-db.sh`
+- [ ] Created log file `touch /var/log/scheduler.log`
+- [ ] Set proper permissions on log file `chmod 644 /var/log/scheduler.log`
+- [ ] Added cron job to crontab `crontab -e`
+- [ ] Added log rotation to crontab
 - [ ] Tested scheduler execution manually `./run-scheduler.sh`
-- [ ] Verified logs to confirm execution `tail -f /var/log/schedule-executor.log`
+- [ ] Verified logs to confirm execution `tail -f /var/log/scheduler.log`
 
-## Cloudflare Tunnel Setup
+## Database Setup
+- [ ] Applied all database migrations `npx supabase db push`
+- [ ] Added missing execution columns (see DB_MIGRATION.md)
+- [ ] Verified schedules table structure
+- [ ] Created backups directory `mkdir -p /var/www/geo-profile-dashboard/backups`
 - [ ] Cloudflare account active with domain
 - [ ] Domain using Cloudflare nameservers
 - [ ] Cloudflared installed on VPS

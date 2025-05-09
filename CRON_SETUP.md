@@ -49,6 +49,13 @@ For better system maintenance, add these optional cron jobs:
 
 ```
 # Restart the application server daily at 3 AM
+0 3 * * * pm2 restart geo-profile-dashboard
+
+# Rotate scheduler logs weekly to prevent them from growing too large
+0 0 * * 0 /var/www/geo-profile-dashboard/rotate-logs.sh
+
+# Backup the database weekly
+0 2 * * 0 /var/www/geo-profile-dashboard/backup-db.sh > /dev/null 2>&1
 0 3 * * * /usr/bin/pm2 restart geo-profile-app
 
 # Rotate logs weekly to prevent large log files

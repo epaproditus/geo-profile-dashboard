@@ -9,7 +9,7 @@ echo
 
 # Default deployment path
 DEPLOY_PATH="${1:-/var/www/geo-profile-dashboard}"
-LOG_FILE="/var/log/schedule-executor.log"
+LOG_FILE="$DEPLOY_PATH/scheduler.log"
 
 # Check if deployment exists
 if [ ! -d "$DEPLOY_PATH" ]; then
@@ -50,18 +50,32 @@ else
     echo "✅ executor.js is executable"
 fi
 
+if [ ! -x "$DEPLOY_PATH/rotate-logs.sh" ]; then
+    echo "❌ rotate-logs.sh is not executable"
+    exit 1
+else
+    echo "✅ rotate-logs.sh is executable"
+fi
+
+if [ ! -x "$DEPLOY_PATH/backup-db.sh" ]; then
+    echo "❌ backup-db.sh is not executable"
+    exit 1
+else
+    echo "✅ backup-db.sh is executable"
+fi
+
 # Check if PM2 is running the application
-if ! pm2 list | grep -q "geo-profile-app"; then
+if ! pm2 list | grep -q "geo-profile-dashboard"; then
     echo "❌ Application is not running in PM2"
 else
     echo "✅ Application is running in PM2"
 fi
 
 # Check if the application is accessible
-if ! curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200"; then
-    echo "❌ Application is not accessible on port 3000"
+if ! curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "200"; then
+    echo "❌ Application is not accessible on port 8080"
 else
-    echo "✅ Application is accessible on port 3000"
+    echo "✅ Application is accessible on port 8080"
 fi
 
 # Check if cron job is set up
@@ -195,11 +209,11 @@ if [ ! -d "$DEPLOY_PATH" ] || [ ! -f "$DEPLOY_PATH/.env" ] || [ ! -d "$DEPLOY_PA
     FAILURES=$((FAILURES+1))
 fi
 
-if [ ! -x "$DEPLOY_PATH/run-scheduler.sh" ] || [ ! -x "$DEPLOY_PATH/scripts/executor.js" ]; then
+if [ ! -x "$DEPLOY_PATH/run-scheduler.sh" ] || [ ! -x "$DEPLOY_PATH/scripts/executor.js" ] || [ ! -x "$DEPLOY_PATH/rotate-logs.sh" ] || [ ! -x "$DEPLOY_PATH/backup-db.sh" ]; then
     FAILURES=$((FAILURES+1))
 fi
 
-if ! pm2 list | grep -q "geo-profile-app" || ! curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200"; then
+if ! pm2 list | grep -q "geo-profile-dashboard" || ! curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "200"; then
     FAILURES=$((FAILURES+1))
 fi
 
@@ -214,7 +228,7 @@ fi
 if [ $FAILURES -eq 0 ]; then
     echo "✅ All tests passed! The deployment appears to be working correctly."
     echo
-    echo "You can now access your application at: http://localhost:3000"
+    echo "You can now access your application at: http://localhost:8080"
     echo "If you've set up Cloudflare Tunnel, use your configured domain."
     echo
     echo "For ongoing maintenance, refer to MONITORING.md"
@@ -225,6 +239,7 @@ else
     echo "- DEPLOYMENT.md"
     echo "- CRON_SETUP.md"
     echo "- MONITORING.md"
+    echo "- DB_MIGRATION.md"
 fi
 
 exit $FAILURES

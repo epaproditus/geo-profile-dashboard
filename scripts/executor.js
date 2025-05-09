@@ -207,12 +207,14 @@ async function executeSchedules() {
         const actionResult = await executeDeviceAction(schedule);
         
         // Update execution time in the database
+        // Note: Only updating last_executed_at as other columns don't exist yet
         const { error: updateError } = await supabase
           .from('schedules')
           .update({ 
-            last_executed_at: now.toISOString(),
-            last_execution_status: actionResult.success ? 'success' : 'failed',
-            last_execution_result: JSON.stringify(actionResult)
+            last_executed_at: now.toISOString()
+            // Status and result columns commented out until they are added to the schema
+            // last_execution_status: actionResult.success ? 'success' : 'failed',
+            // last_execution_result: JSON.stringify(actionResult)
           })
           .eq('id', schedule.id);
         
@@ -229,18 +231,18 @@ async function executeSchedules() {
           details: actionResult
         };
       } catch (scheduleError) {
-        log(`Error executing schedule ${schedule.id}: ${scheduleError.message}`);
-        
-        // Try to update the schedule with error information
-        try {
-          await supabase
-            .from('schedules')
-            .update({ 
-              last_executed_at: now.toISOString(),
-              last_execution_status: 'error',
-              last_execution_result: JSON.stringify({ error: scheduleError.message })
-            })
-            .eq('id', schedule.id);
+        log(`Error executing schedule ${schedule.id}: ${scheduleError.message}`);          // Try to update the schedule with error information
+          // Note: Only updating last_executed_at as other columns don't exist yet
+          try {
+            await supabase
+              .from('schedules')
+              .update({ 
+                last_executed_at: now.toISOString()
+                // Status and result columns commented out until they are added to the schema
+                // last_execution_status: 'error',
+                // last_execution_result: JSON.stringify({ error: scheduleError.message })
+              })
+              .eq('id', schedule.id);
         } catch (dbError) {
           log(`Failed to update schedule with error status: ${dbError.message}`);
         }
