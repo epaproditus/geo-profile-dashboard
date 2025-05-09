@@ -12,13 +12,6 @@ import { fileURLToPath } from 'url';
 
 // Load environment variables
 dotenv.config();
-
-// Cronitor configuration
-const CRONITOR_BASE_URL = 'https://cronitor.link/p/3N4e227qB59045b7b2eA3bfbc41f1fef/';
-const CRONITOR_MONITOR_KEY = 'schedule-executor';
-const LOG_FILE = '/var/log/schedule-executor.log';
-
-// Get the current file path
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
