@@ -1,15 +1,28 @@
 #!/bin/bash
 # This script sets up the environment and runs the schedule executor
 
-# Set the environment variables
-export API_URL="http://localhost:3000"  # Change this to your actual API URL
-export SCHEDULE_EXECUTOR_API_KEY="YOUR_API_KEY_HERE"  # Set this to your actual API key
-export SUPABASE_URL="YOUR_SUPABASE_URL"  # Add if needed
-export SUPABASE_SERVICE_ROLE_KEY="YOUR_SUPABASE_KEY"  # Add if needed
-export SIMPLEMDM_API_KEY="YOUR_SIMPLEMDM_API_KEY"  # Add if needed
+# Set app directory path
+APP_DIR="/root/geo-profile-dashboard"
+LOG_FILE="/var/log/schedule-executor.log"
+
+# Load environment variables from .env file if it exists
+if [ -f "$APP_DIR/.env" ]; then
+    set -a
+    source "$APP_DIR/.env"
+    set +a
+else
+    echo "Error: .env file not found at $APP_DIR/.env" >> $LOG_FILE
+    exit 1
+fi
 
 # Navigate to the project directory
-cd "$(dirname "$0")"
+cd "$APP_DIR" || { echo "Error: Could not change to directory $APP_DIR" >> $LOG_FILE; exit 1; }
 
-# Run the execute-schedules.js script
-node scripts/execute-schedules.js
+# Log start of execution
+echo "[$(date)] Starting schedule execution" >> $LOG_FILE
+
+# Run the direct-execute.js script
+node scripts/direct-execute.js
+
+# Log exit code
+echo "[$(date)] Execution finished with exit code $?" >> $LOG_FILE

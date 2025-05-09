@@ -10,7 +10,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "supabase:migration:apply": "npx supabase db push",
-    "supabase:migration:new": "node scripts/create-migration.js"
+    "supabase:migration:new": "node scripts/create-migration.js",
+    "server": "node server.js",
+    "start": "npm run build && node server.js",
+    "execute-schedules": "node scripts/direct-execute.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
