@@ -9,6 +9,7 @@ SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 APP_DIR="${APP_DIR:-$SCRIPT_DIR}"
 LOG_FILE="${LOG_FILE:-/var/log/schedule-executor.log}"
 
+
 echo "Using application directory: $APP_DIR"
 
 # Ensure log directory and file exist and are writable
