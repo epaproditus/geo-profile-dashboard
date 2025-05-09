@@ -1,7 +1,17 @@
 // /api/schedules/execute.js
 import { createClient } from '@supabase/supabase-js';
+import fetch from 'node-fetch';
+
+// Add Cronitor configuration
+const CRONITOR_BASE_URL = 'https://cronitor.link/p/3N4e227qB59045b7b2eA3bfbc41f1fef/';
+const CRONITOR_MONITOR_KEY = 'schedule-executor';
 
 export default async function handler(req, res) {
+  // Track execution start time for telemetry
+  const startTime = Date.now();
+  let cronitorStatus = 'success';
+  let cronitorMessage = '';
+  
   try {
     // Only allow POST requests for security, but also allow GET for Vercel Cron
     if (req.method !== 'POST' && req.method !== 'GET') {
@@ -141,14 +151,66 @@ export default async function handler(req, res) {
       }
     }));
     
+    // Send telemetry to Cronitor with execution results
+    const executionTime = Date.now() - startTime;
+    cronitorMessage = `Executed ${results.filter(r => r.success).length} schedules, ${results.filter(r => !r.success).length} failed`;
+    
+    await sendCronitorTelemetry({
+      status: results.some(r => !r.success) ? 'warning' : 'success',
+      message: cronitorMessage,
+      metrics: {
+        duration: executionTime,
+        count: schedulesToExecute.length
+      }
+    });
+    
     return res.status(200).json({
       executed: results.filter(r => r.success).length,
       failed: results.filter(r => !r.success).length,
-      results
+      results,
+      executionTime
     });
   } catch (error) {
     console.error('Schedule execution error:', error);
+    
+    // Send failure telemetry to Cronitor
+    cronitorStatus = 'fail';
+    cronitorMessage = `Error: ${error.message}`;
+    
+    await sendCronitorTelemetry({
+      status: cronitorStatus,
+      message: cronitorMessage
+    });
+    
     return res.status(500).json({ error: 'Schedule execution failed', details: error.message });
+  }
+}
+
+// Helper function to send telemetry to Cronitor
+async function sendCronitorTelemetry({ status = 'success', message = '', metrics = {} }) {
+  try {
+    const params = new URLSearchParams();
+    
+    // Add status and message
+    params.append('state', status);
+    if (message) params.append('message', message);
+    
+    // Add any metrics
+    Object.entries(metrics).forEach(([key, value]) => {
+      params.append(key, value.toString());
+    });
+    
+    // Build the telemetry URL
+    const telemetryUrl = `${CRONITOR_BASE_URL}${CRONITOR_MONITOR_KEY}?${params.toString()}`;
+    
+    // Send the telemetry ping
+    const response = await fetch(telemetryUrl);
+    
+    if (!response.ok) {
+      console.error('Failed to send Cronitor telemetry:', await response.text());
+    }
+  } catch (err) {
+    console.error('Error sending Cronitor telemetry:', err);
   }
 }
 
