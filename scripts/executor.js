@@ -113,6 +113,27 @@ async function executeDeviceAction(schedule) {
         
         return { success: true, message: `Apps push initiated for device group ${groupId}` };
         
+      case 'push_profile':
+        // Implementation for pushing a profile to an assignment group
+        const assignmentGroupId = schedule.assignment_group_id;
+        const profileId = schedule.profile_id;
+        
+        if (!assignmentGroupId) {
+          return { success: false, message: 'No assignment_group_id specified for push_profile action' };
+        }
+        
+        if (!profileId) {
+          return { success: false, message: 'No profile_id specified for push_profile action' };
+        }
+        
+        log(`Pushing profile ${profileId} to assignment group ${assignmentGroupId}`);
+        await callSimpleMDM(`assignment_groups/${assignmentGroupId}/profiles/${profileId}`, 'POST');
+        
+        return { 
+          success: true, 
+          message: `Profile ${profileId} assigned to assignment group ${assignmentGroupId}` 
+        };
+        
       case 'custom_command':
         // Execute custom command
         if (!schedule.command_data) {
@@ -160,7 +181,8 @@ async function executeSchedules() {
     // Test connection with a simple query
     const { data, error } = await supabase
       .from('schedules')
-      .select('id', { count: 'exact', head: true });
+      .select('id')
+      .limit(1);
     
     if (error) {
       log(`Database error: ${error.message}`);

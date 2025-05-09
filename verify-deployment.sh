@@ -148,7 +148,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-supabase.from("schedules").select("count").then(result => {
+supabase.from("schedules").select("id").limit(1).then(result => {
   console.log(JSON.stringify({ success: !result.error, error: result.error }));
 }).catch(error => {
   console.log(JSON.stringify({ success: false, error: error.message }));

@@ -322,3 +322,27 @@ Available events:
 This documentation covers API version 1.51.
 
 *Note: SimpleMDM operates exclusively over HTTPS. Requests received over HTTP without encryption will fail.*
+
+
+Assign profile
+Assign profile to an assignment group. You must have permission to modify both the assignment group and the profile.
+
+curl https://a.simplemdm.com/api/v1/assignment_groups/43/profiles/83 \
+  -u ${API_KEY}: \
+  -X POST
+
+HTTP/1.1 204 No Content
+HTTP Request
+POST https://a.simplemdm.com/api/v1/assignment_groups/{ASSIGNMENT_GROUP_ID}/profiles/{PROFILE_ID}
+
+Unassign profile
+Unassign profile from an assignment group. You must have permission to modify both the assignment group and the profile.
+
+curl https://a.simplemdm.com/api/v1/assignment_groups/43/profiles/83 \
+  -u ${API_KEY}: \
+  -X DELETE
+
+HTTP/1.1 204 No Content
+HTTP Request
+DELETE https://a.simplemdm.com/api/v1/assignment_groups/{ASSIGNMENT_GROUP_ID}/profiles/{PROFILE_ID}
+

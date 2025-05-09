@@ -56,10 +56,6 @@ For better system maintenance, add these optional cron jobs:
 
 # Backup the database weekly
 0 2 * * 0 /var/www/geo-profile-dashboard/backup-db.sh > /dev/null 2>&1
-0 3 * * * /usr/bin/pm2 restart geo-profile-app
-
-# Rotate logs weekly to prevent large log files
-0 0 * * 0 /usr/bin/find /var/log/schedule-executor.log -size +100M -exec truncate -s 0 {} \;
 ```
 
 ### Step 4: Test the Cron Job
