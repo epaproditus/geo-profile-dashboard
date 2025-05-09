@@ -18,6 +18,11 @@ export interface Schedule {
   last_executed_at: string | null;
   created_at: string;
   updated_at: string;
+  // SimpleMDM integration fields
+  action_type: string | null;
+  assignment_group_id: number | null;
+  device_group_id: number | null;
+  command_data: string | null;
 }
 
 export type ScheduleCreate = Omit<Schedule, 'id' | 'created_at' | 'updated_at' | 'last_executed_at'> & {

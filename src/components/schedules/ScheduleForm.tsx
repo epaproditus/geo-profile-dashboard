@@ -24,6 +24,7 @@ import { useAllProfiles } from "@/hooks/use-simplemdm";
 import ProfileSelector from "@/components/schedules/ProfileSelector";
 import DeviceFilterSelector from "@/components/schedules/DeviceFilterSelector";
 import { MultiProfileSelector } from "@/components/schedules/ProfileSelector";
+import AssignmentGroupField from '@/components/assignments/AssignmentGroupField';
 
 // Form validation schema
 const scheduleFormSchema = z.object({
@@ -40,6 +41,9 @@ const scheduleFormSchema = z.object({
   recurrence_pattern: z.enum(["daily", "weekly", "monthly"]).optional(),
   days_of_week: z.array(z.number()).optional(),
   day_of_month: z.number().min(1).max(31).optional(),
+  // Fields for SimpleMDM API integration
+  action_type: z.enum(["push_profile"]).default("push_profile"),
+  assignment_group_id: z.string().optional(),
 });
 
 type ScheduleFormValues = z.infer<typeof scheduleFormSchema>;
@@ -134,6 +138,9 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             recurrence_pattern: existingSchedule.recurrence_pattern as "daily" | "weekly" | "monthly" || "daily",
             days_of_week: existingSchedule.days_of_week ? JSON.parse(existingSchedule.days_of_week) : undefined,
             day_of_month: existingSchedule.day_of_month || undefined,
+            // SimpleMDM integration fields
+            action_type: existingSchedule.action_type as "push_profile" || "push_profile",
+            assignment_group_id: existingSchedule.assignment_group_id ? existingSchedule.assignment_group_id.toString() : undefined,
           });
         }
       } catch (e) {
@@ -168,6 +175,15 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         return;
       }
       
+      // Validate assignment group for SimpleMDM push_profile action
+      if (!values.assignment_group_id) {
+        form.setError("assignment_group_id", {
+          type: "manual",
+          message: "Please select an assignment group for profile assignment"
+        });
+        return;
+      }
+      
       // For each profile, create a separate schedule
       for (const profileId of values.profile_ids) {
         // Prepare data for submission
@@ -186,6 +202,13 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             ? JSON.stringify(values.days_of_week) 
             : null,
           day_of_month: values.day_of_month || null,
+          timezone: "UTC", // Add required timezone field
+          end_time: null, // Add required end_time field
+          // Add SimpleMDM API integration fields
+          action_type: "push_profile",
+          assignment_group_id: values.assignment_group_id ? parseInt(values.assignment_group_id) : null,
+          device_group_id: null, // Not used for profile push
+          command_data: null // Not used for profile push
         };
         
         // Create or update
@@ -642,6 +665,11 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
               </FormItem>
             )}
           />
+        </div>
+
+        {/* SimpleMDM Assignment Group */}
+        <div>
+          <AssignmentGroupField form={form} />
         </div>
         
         {/* Recurring Schedule Options */}
