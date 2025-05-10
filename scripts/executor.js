@@ -133,6 +133,87 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
   }
 }
 
+// Helper function to remove a profile from a device
+async function removeProfileFromDevice(profileId, deviceId, scheduleId, supabaseClient) {
+  try {
+    log(`Removing profile ${profileId} from device ${deviceId}`);
+    const result = await callSimpleMDM(`profiles/${profileId}/devices/${deviceId}`, 'DELETE');
+    log(`Successfully removed profile ${profileId} from device ${deviceId}`);
+    
+    // Log to the API logs table if it exists
+    try {
+      if (supabaseClient) {
+        await supabaseClient.from('simplemdm_api_logs').insert({
+          schedule_id: scheduleId,
+          action_type: 'remove_profile',
+          profile_id: Number(profileId),
+          device_id: String(deviceId),
+          request_url: `/profiles/${profileId}/devices/${deviceId}`,
+          request_method: 'DELETE',
+          success: true
+        });
+      }
+    } catch (logError) {
+      // Don't fail if logging fails
+      log(`Note: Failed to log API call to database: ${logError.message}`);
+    }
+    
+    return { success: true, deviceId };
+  } catch (error) {
+    // Check if this is a 409 error (profile not found), which we treat as success
+    // SimpleMDM returns 409 when the profile is not installed on the device
+    const isProfileNotFound = error.message.includes('409');
+    
+    if (isProfileNotFound) {
+      log(`Profile ${profileId} not found on device ${deviceId} (409) - treating as success`);
+      
+      // Log as a successful operation (the end result is what we want - profile not on device)
+      try {
+        if (supabaseClient) {
+          await supabaseClient.from('simplemdm_api_logs').insert({
+            schedule_id: scheduleId,
+            action_type: 'remove_profile',
+            profile_id: Number(profileId),
+            device_id: String(deviceId),
+            request_url: `/profiles/${profileId}/devices/${deviceId}`,
+            request_method: 'DELETE',
+            success: true,
+            response_status: 409,
+            error_message: 'Profile not found on device (already removed)'
+          });
+        }
+      } catch (logError) {
+        log(`Note: Failed to log API call to database: ${logError.message}`);
+      }
+      
+      // Return success since the profile is already not on the device
+      return { success: true, deviceId, alreadyRemoved: true };
+    }
+    
+    log(`Error removing profile ${profileId} from device ${deviceId}: ${error.message}`);
+    
+    // Log failed API call
+    try {
+      if (supabaseClient) {
+        await supabaseClient.from('simplemdm_api_logs').insert({
+          schedule_id: scheduleId,
+          action_type: 'remove_profile',
+          profile_id: Number(profileId),
+          device_id: String(deviceId),
+          request_url: `/profiles/${profileId}/devices/${deviceId}`,
+          request_method: 'DELETE',
+          success: false,
+          error_message: error.message
+        });
+      }
+    } catch (logError) {
+      log(`Note: Failed to log API error to database: ${logError.message}`);
+    }
+    
+    return { success: false, deviceId, error: error.message };
+  }
+}
+
 // Helper function to fetch devices matching a filter
 async function fetchFilteredDevices(filter, supabaseClient) {
   // Get all devices
@@ -275,6 +356,58 @@ async function executeDeviceAction(schedule) {
           success: true, 
           message: `Profile ${profileId} assigned to assignment group ${assignmentGroupId}` 
         };
+
+      case 'remove_profile':
+        // Implementation for removing a profile from devices
+        const removeProfileId = schedule.profile_id;
+        const removeDeviceFilter = schedule.device_filter;
+        
+        if (!removeProfileId) {
+          return { success: false, message: 'No profile_id specified for remove_profile action' };
+        }
+        
+        try {
+          // If device_filter is specified, find matching devices
+          let targetDevicesToRemove = [];
+          if (removeDeviceFilter) {
+            log(`Finding devices matching filter for profile removal: ${JSON.stringify(removeDeviceFilter)}`);
+            const devicesToRemove = await fetchFilteredDevices(removeDeviceFilter, supabase);
+            targetDevicesToRemove = devicesToRemove.data || [];
+            log(`Found ${targetDevicesToRemove.length} matching devices for profile removal`);
+          } else if (schedule.device_group_id) {
+            // If device_group_id is specified, get devices from that group
+            log(`Getting devices from group ${schedule.device_group_id} for profile removal`);
+            const removeResponse = await callSimpleMDM(`device_groups/${schedule.device_group_id}/devices`);
+            targetDevicesToRemove = removeResponse.data || [];
+            log(`Found ${targetDevicesToRemove.length} devices in group ${schedule.device_group_id} for profile removal`);
+          } else {
+            return { success: false, message: 'No device_group_id or device_filter specified for remove_profile action' };
+          }
+          
+          if (targetDevicesToRemove.length === 0) {
+            return { success: false, message: 'No matching devices found for the profile removal' };
+          }
+          
+          // Remove the profile from each device
+          log(`Removing profile ${removeProfileId} from ${targetDevicesToRemove.length} devices`);
+          const removalResults = await Promise.all(
+            targetDevicesToRemove.map(device => 
+              removeProfileFromDevice(removeProfileId, device.id, schedule.id, supabase)
+            )
+          );
+          
+          const removalSuccessCount = removalResults.filter(r => r.success).length;
+          const alreadyRemovedCount = removalResults.filter(r => r.alreadyRemoved).length;
+          
+          return { 
+            success: removalSuccessCount > 0, 
+            message: `Profile ${removeProfileId} removed from ${removalSuccessCount}/${targetDevicesToRemove.length} devices (${alreadyRemovedCount} already removed)`,
+            details: { deviceResults: removalResults }
+          };
+        } catch (error) {
+          log(`Error removing profile: ${error.message}`);
+          return { success: false, message: `Error removing profile: ${error.message}` };
+        }
         
       case 'custom_command':
         // Execute custom command
