@@ -119,7 +119,7 @@ export default async function handler(req, res) {
         // Apply the profile to each device
         const profileApplicationResults = await Promise.all(
           targetDevices.map(device => 
-            pushProfileToDevice(schedule.profile_id, device.id, simpleMdmApiKey)
+            pushProfileToDevice(schedule.profile_id, device.id, simpleMdmApiKey, schedule.id)
           )
         );
         
@@ -307,9 +307,10 @@ async function fetchFilteredDevices(filter, apiKey) {
 }
 
 // Helper function to push a profile to a device
-async function pushProfileToDevice(profileId, deviceId, apiKey) {
+async function pushProfileToDevice(profileId, deviceId, apiKey, scheduleId) {
   try {
-    const response = await fetch(`https://a.simplemdm.com/api/v1/profiles/${profileId}/devices/${deviceId}`, {
+    const requestUrl = `https://a.simplemdm.com/api/v1/profiles/${profileId}/devices/${deviceId}`;
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`,
@@ -317,14 +318,58 @@ async function pushProfileToDevice(profileId, deviceId, apiKey) {
       }
     });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`SimpleMDM API error (${response.status}): ${errorText}`);
+    const responseStatus = response.status;
+    let responseBody;
+    
+    try {
+      responseBody = await response.json();
+    } catch (e) {
+      // Response may not be JSON
+      responseBody = { text: await response.text() };
     }
     
-    return { success: true };
+    // Log the API call to our database if we have a schedule ID
+    if (scheduleId) {
+      await supabase.from('simplemdm_api_logs').insert({
+        schedule_id: scheduleId,
+        action_type: 'push_profile',
+        profile_id: Number(profileId),
+        device_id: String(deviceId),
+        request_url: `/profiles/${profileId}/devices/${deviceId}`,
+        request_method: 'POST',
+        response_status: responseStatus,
+        response_body: responseBody,
+        success: response.ok,
+        error_message: !response.ok ? `HTTP ${responseStatus}` : undefined
+      });
+    }
+    
+    if (!response.ok) {
+      throw new Error(`SimpleMDM API error (${responseStatus}): ${JSON.stringify(responseBody)}`);
+    }
+    
+    return { success: true, data: responseBody };
   } catch (error) {
     console.error(`Error pushing profile ${profileId} to device ${deviceId}:`, error);
+    
+    // Log failed API call if not already logged
+    if (scheduleId && error.name !== 'SimpleMDMApiError') {
+      try {
+        await supabase.from('simplemdm_api_logs').insert({
+          schedule_id: scheduleId,
+          action_type: 'push_profile',
+          profile_id: Number(profileId),
+          device_id: String(deviceId),
+          request_url: `/profiles/${profileId}/devices/${deviceId}`,
+          request_method: 'POST',
+          success: false,
+          error_message: error.message
+        });
+      } catch (logError) {
+        console.error('Failed to log API error:', logError);
+      }
+    }
+    
     return { success: false, error: error.message };
   }
 }

@@ -15,6 +15,57 @@ const apiClient = axios.create({
   },
 });
 
+// Helper function to log API calls to our database
+async function logApiCall({
+  scheduleId,
+  actionType,
+  profileId,
+  deviceId,
+  deviceGroupId,
+  assignmentGroupId,
+  requestUrl,
+  requestMethod,
+  requestPayload,
+  responseStatus,
+  responseBody,
+  success,
+  errorMessage
+}: {
+  scheduleId?: string;
+  actionType: string;
+  profileId?: number | string;
+  deviceId?: number | string;
+  deviceGroupId?: number;
+  assignmentGroupId?: number;
+  requestUrl: string;
+  requestMethod: string;
+  requestPayload?: any;
+  responseStatus?: number;
+  responseBody?: any;
+  success: boolean;
+  errorMessage?: string;
+}) {
+  try {
+    await supabase.from('simplemdm_api_logs').insert({
+      schedule_id: scheduleId,
+      action_type: actionType,
+      profile_id: profileId ? Number(profileId) : undefined,
+      device_id: deviceId ? String(deviceId) : undefined,
+      device_group_id: deviceGroupId,
+      assignment_group_id: assignmentGroupId,
+      request_url: requestUrl,
+      request_method: requestMethod,
+      request_payload: requestPayload,
+      response_status: responseStatus,
+      response_body: responseBody,
+      success,
+      error_message: errorMessage
+    });
+  } catch (error) {
+    console.error('Failed to log SimpleMDM API call:', error);
+  }
+}
+
 // Add auth interceptor to include Supabase token with every request
 apiClient.interceptors.request.use(async (config) => {
   try {
@@ -366,11 +417,39 @@ export const simplemdmApi = {
   },
   
   // Push a profile to a specific device
-  async pushProfileToDevice(profileId: number | string, deviceId: number | string) {
+  async pushProfileToDevice(profileId: number | string, deviceId: number | string, scheduleId?: string) {
+    const requestUrl = `/profiles/${profileId}/devices/${deviceId}`;
     try {
-      const response = await apiClient.post(`/profiles/${profileId}/devices/${deviceId}`);
+      const response = await apiClient.post(requestUrl);
+      
+      // Log the successful API call
+      await logApiCall({
+        scheduleId,
+        actionType: 'push_profile',
+        profileId,
+        deviceId,
+        requestUrl,
+        requestMethod: 'POST',
+        responseStatus: response.status,
+        responseBody: response.data,
+        success: true
+      });
+      
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
+      // Log the failed API call
+      await logApiCall({
+        scheduleId,
+        actionType: 'push_profile',
+        profileId,
+        deviceId,
+        requestUrl,
+        requestMethod: 'POST',
+        responseStatus: error.response?.status,
+        success: false,
+        errorMessage: error.message
+      });
+      
       console.error(`Error pushing profile ${profileId} to device ${deviceId}:`, error);
       throw error;
     }
