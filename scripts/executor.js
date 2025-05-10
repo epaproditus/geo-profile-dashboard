@@ -49,7 +49,26 @@ async function callSimpleMDM(endpoint, method = 'GET', data = null) {
   
   try {
     const response = await fetch(url, options);
-    const responseData = await response.json();
+    
+    // Handle empty responses (like 204 No Content)
+    let responseData;
+    const contentType = response.headers.get('content-type');
+    
+    if (response.status === 204 || !contentType || !contentType.includes('application/json')) {
+      // For empty responses or non-JSON responses, don't try to parse JSON
+      responseData = { success: true, status: response.status };
+    } else {
+      try {
+        responseData = await response.json();
+      } catch (jsonError) {
+        log(`Warning: Could not parse JSON response: ${jsonError.message}`);
+        responseData = { 
+          success: response.ok,
+          status: response.status,
+          text: await response.text()
+        };
+      }
+    }
     
     if (!response.ok) {
       log(`SimpleMDM API error: ${response.status} - ${JSON.stringify(responseData)}`);
@@ -64,7 +83,7 @@ async function callSimpleMDM(endpoint, method = 'GET', data = null) {
 }
 
 // Helper function to push a profile to a device
-async function pushProfileToDevice(profileId, deviceId, scheduleId) {
+async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClient) {
   try {
     log(`Pushing profile ${profileId} to device ${deviceId}`);
     const result = await callSimpleMDM(`profiles/${profileId}/devices/${deviceId}`, 'POST');
@@ -72,15 +91,17 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId) {
     
     // Log to the API logs table if it exists
     try {
-      await supabase.from('simplemdm_api_logs').insert({
-        schedule_id: scheduleId,
-        action_type: 'push_profile',
-        profile_id: Number(profileId),
-        device_id: String(deviceId),
-        request_url: `/profiles/${profileId}/devices/${deviceId}`,
-        request_method: 'POST',
-        success: true
-      });
+      if (supabaseClient) {
+        await supabaseClient.from('simplemdm_api_logs').insert({
+          schedule_id: scheduleId,
+          action_type: 'push_profile',
+          profile_id: Number(profileId),
+          device_id: String(deviceId),
+          request_url: `/profiles/${profileId}/devices/${deviceId}`,
+          request_method: 'POST',
+          success: true
+        });
+      }
     } catch (logError) {
       // Don't fail if logging fails
       log(`Note: Failed to log API call to database: ${logError.message}`);
@@ -92,16 +113,18 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId) {
     
     // Log failed API call
     try {
-      await supabase.from('simplemdm_api_logs').insert({
-        schedule_id: scheduleId,
-        action_type: 'push_profile',
-        profile_id: Number(profileId),
-        device_id: String(deviceId),
-        request_url: `/profiles/${profileId}/devices/${deviceId}`,
-        request_method: 'POST',
-        success: false,
-        error_message: error.message
-      });
+      if (supabaseClient) {
+        await supabaseClient.from('simplemdm_api_logs').insert({
+          schedule_id: scheduleId,
+          action_type: 'push_profile',
+          profile_id: Number(profileId),
+          device_id: String(deviceId),
+          request_url: `/profiles/${profileId}/devices/${deviceId}`,
+          request_method: 'POST',
+          success: false,
+          error_message: error.message
+        });
+      }
     } catch (logError) {
       log(`Note: Failed to log API error to database: ${logError.message}`);
     }
@@ -111,7 +134,7 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId) {
 }
 
 // Helper function to fetch devices matching a filter
-async function fetchFilteredDevices(filter) {
+async function fetchFilteredDevices(filter, supabaseClient) {
   // Get all devices
   const allDevices = await callSimpleMDM('devices');
   const devices = allDevices.data || [];
@@ -212,7 +235,7 @@ async function executeDeviceAction(schedule) {
           let targetDevices = [];
           if (deviceFilter) {
             log(`Finding devices matching filter: ${JSON.stringify(deviceFilter)}`);
-            const devices = await fetchFilteredDevices(deviceFilter);
+            const devices = await fetchFilteredDevices(deviceFilter, supabase);
             targetDevices = devices.data || [];
             log(`Found ${targetDevices.length} matching devices`);
           } else if (schedule.device_group_id) {
@@ -233,7 +256,7 @@ async function executeDeviceAction(schedule) {
           log(`Pushing profile ${profileId} to ${targetDevices.length} devices`);
           const results = await Promise.all(
             targetDevices.map(device => 
-              pushProfileToDevice(profileId, device.id, schedule.id)
+              pushProfileToDevice(profileId, device.id, schedule.id, supabase)
             )
           );
           
