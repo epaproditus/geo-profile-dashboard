@@ -63,6 +63,82 @@ async function callSimpleMDM(endpoint, method = 'GET', data = null) {
   }
 }
 
+// Helper function to push a profile to a device
+async function pushProfileToDevice(profileId, deviceId, scheduleId) {
+  try {
+    log(`Pushing profile ${profileId} to device ${deviceId}`);
+    const result = await callSimpleMDM(`profiles/${profileId}/devices/${deviceId}`, 'POST');
+    log(`Successfully pushed profile ${profileId} to device ${deviceId}`);
+    
+    // Log to the API logs table if it exists
+    try {
+      await supabase.from('simplemdm_api_logs').insert({
+        schedule_id: scheduleId,
+        action_type: 'push_profile',
+        profile_id: Number(profileId),
+        device_id: String(deviceId),
+        request_url: `/profiles/${profileId}/devices/${deviceId}`,
+        request_method: 'POST',
+        success: true
+      });
+    } catch (logError) {
+      // Don't fail if logging fails
+      log(`Note: Failed to log API call to database: ${logError.message}`);
+    }
+    
+    return { success: true, deviceId };
+  } catch (error) {
+    log(`Error pushing profile ${profileId} to device ${deviceId}: ${error.message}`);
+    
+    // Log failed API call
+    try {
+      await supabase.from('simplemdm_api_logs').insert({
+        schedule_id: scheduleId,
+        action_type: 'push_profile',
+        profile_id: Number(profileId),
+        device_id: String(deviceId),
+        request_url: `/profiles/${profileId}/devices/${deviceId}`,
+        request_method: 'POST',
+        success: false,
+        error_message: error.message
+      });
+    } catch (logError) {
+      log(`Note: Failed to log API error to database: ${logError.message}`);
+    }
+    
+    return { success: false, deviceId, error: error.message };
+  }
+}
+
+// Helper function to fetch devices matching a filter
+async function fetchFilteredDevices(filter) {
+  // Get all devices
+  const allDevices = await callSimpleMDM('devices');
+  const devices = allDevices.data || [];
+  
+  // Apply filters
+  let filteredDevices = [...devices];
+  
+  // Filter by name contains
+  if (filter.nameContains) {
+    log(`Filtering devices where name contains '${filter.nameContains}'`);
+    filteredDevices = filteredDevices.filter(device => 
+      device.attributes.name && device.attributes.name.toLowerCase().includes(filter.nameContains.toLowerCase())
+    );
+  }
+  
+  // Filter by group IDs if specified
+  if (filter.groupIds && filter.groupIds.length > 0) {
+    log(`Filtering devices in groups: ${filter.groupIds.join(', ')}`);
+    filteredDevices = filteredDevices.filter(device => 
+      device.relationships?.device_group && 
+      filter.groupIds.includes(device.relationships.device_group.data.id)
+    );
+  }
+  
+  return { data: filteredDevices };
+}
+
 // Function to execute a device update based on schedule type
 async function executeDeviceAction(schedule) {
   if (!schedule.action_type) {
@@ -114,20 +190,63 @@ async function executeDeviceAction(schedule) {
         return { success: true, message: `Apps push initiated for device group ${groupId}` };
         
       case 'push_profile':
-        // Implementation for pushing a profile to an assignment group
+        // Implementation for pushing a profile to devices
         const assignmentGroupId = schedule.assignment_group_id;
         const profileId = schedule.profile_id;
-        
-        if (!assignmentGroupId) {
-          return { success: false, message: 'No assignment_group_id specified for push_profile action' };
-        }
+        const deviceFilter = schedule.device_filter;
         
         if (!profileId) {
           return { success: false, message: 'No profile_id specified for push_profile action' };
         }
         
-        log(`Pushing profile ${profileId} to assignment group ${assignmentGroupId}`);
-        await callSimpleMDM(`assignment_groups/${assignmentGroupId}/profiles/${profileId}`, 'POST');
+        // Check if we're pushing via assignment group
+        if (assignmentGroupId) {
+          log(`Pushing profile ${profileId} to assignment group ${assignmentGroupId}`);
+          await callSimpleMDM(`assignment_groups/${assignmentGroupId}/profiles/${profileId}`, 'POST');
+          return { success: true, message: `Profile ${profileId} pushed to assignment group ${assignmentGroupId}` };
+        }
+        
+        // Otherwise, we need to find the target devices and push directly
+        try {
+          // If device_filter is specified, find matching devices
+          let targetDevices = [];
+          if (deviceFilter) {
+            log(`Finding devices matching filter: ${JSON.stringify(deviceFilter)}`);
+            const devices = await fetchFilteredDevices(deviceFilter);
+            targetDevices = devices.data || [];
+            log(`Found ${targetDevices.length} matching devices`);
+          } else if (schedule.device_group_id) {
+            // If device_group_id is specified, get devices from that group
+            log(`Getting devices from group ${schedule.device_group_id}`);
+            const response = await callSimpleMDM(`device_groups/${schedule.device_group_id}/devices`);
+            targetDevices = response.data || [];
+            log(`Found ${targetDevices.length} devices in group ${schedule.device_group_id}`);
+          } else {
+            return { success: false, message: 'No assignment_group_id, device_group_id, or device_filter specified for push_profile action' };
+          }
+          
+          if (targetDevices.length === 0) {
+            return { success: false, message: 'No matching devices found for the profile push' };
+          }
+          
+          // Push the profile to each device
+          log(`Pushing profile ${profileId} to ${targetDevices.length} devices`);
+          const results = await Promise.all(
+            targetDevices.map(device => 
+              pushProfileToDevice(profileId, device.id, schedule.id)
+            )
+          );
+          
+          const successCount = results.filter(r => r.success).length;
+          return { 
+            success: successCount > 0, 
+            message: `Profile ${profileId} pushed to ${successCount}/${targetDevices.length} devices`,
+            details: { deviceResults: results }
+          };
+        } catch (error) {
+          log(`Error pushing profile: ${error.message}`);
+          return { success: false, message: `Error pushing profile: ${error.message}` };
+        }
         
         return { 
           success: true, 
