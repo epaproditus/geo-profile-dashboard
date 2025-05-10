@@ -42,7 +42,7 @@ const scheduleFormSchema = z.object({
   days_of_week: z.array(z.number()).optional(),
   day_of_month: z.number().min(1).max(31).optional(),
   // Fields for SimpleMDM API integration
-  action_type: z.enum(["push_profile"]).default("push_profile"),
+  action_type: z.enum(["push_profile", "remove_profile"]).default("push_profile"),
   assignment_group_id: z.string().optional(),
 });
 
@@ -151,6 +151,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
   
   const scheduleType = form.watch("schedule_type");
   const recurrencePattern = form.watch("recurrence_pattern");
+  const actionType = form.watch("action_type");
   
   // Form submission
   const onSubmit = async (values: ScheduleFormValues) => {
@@ -175,11 +176,11 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         return;
       }
       
-      // Validate assignment group for SimpleMDM push_profile action
+      // Validate assignment group for SimpleMDM profile actions
       if (!values.assignment_group_id) {
         form.setError("assignment_group_id", {
           type: "manual",
-          message: "Please select an assignment group for profile assignment"
+          message: `Please select an assignment group for profile ${values.action_type === "push_profile" ? "installation" : "removal"}`
         });
         return;
       }
@@ -205,7 +206,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           timezone: "UTC", // Add required timezone field
           end_time: null, // Add required end_time field
           // Add SimpleMDM API integration fields
-          action_type: "push_profile",
+          action_type: values.action_type,
           assignment_group_id: values.assignment_group_id ? parseInt(values.assignment_group_id) : null,
           device_group_id: null, // Not used for profile push
           command_data: null // Not used for profile push
@@ -621,6 +622,47 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           />
         </div>
         
+        {/* Action Type Selection */}
+        <div>
+          <FormField
+            control={form.control}
+            name="action_type"
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormLabel>Profile Action</FormLabel>
+                <FormControl>
+                  <RadioGroup
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    className="flex flex-col space-y-1"
+                  >
+                    <FormItem className="flex items-center space-x-3 space-y-0">
+                      <FormControl>
+                        <RadioGroupItem value="push_profile" />
+                      </FormControl>
+                      <FormLabel className="font-normal">
+                        Install Profile
+                      </FormLabel>
+                    </FormItem>
+                    <FormItem className="flex items-center space-x-3 space-y-0">
+                      <FormControl>
+                        <RadioGroupItem value="remove_profile" />
+                      </FormControl>
+                      <FormLabel className="font-normal">
+                        Remove Profile
+                      </FormLabel>
+                    </FormItem>
+                  </RadioGroup>
+                </FormControl>
+                <FormDescription>
+                  Choose whether to install or remove the selected profile(s) from devices.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+        
         {/* Profile Selection */}
         <div>
           <FormField
@@ -636,7 +678,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                   />
                 </FormControl>
                 <FormDescription>
-                  Select configuration profiles to be installed on the scheduled time.
+                  Select configuration profiles to be {form.watch("action_type") === "push_profile" ? "installed on" : "removed from"} devices at the scheduled time.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -659,7 +701,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                   />
                 </FormControl>
                 <FormDescription>
-                  Specify which devices should receive this profile. Leave empty to apply to all devices.
+                  Specify which devices should {actionType === "push_profile" ? "receive" : "have removed"} this profile. Leave empty to apply to all devices.
                 </FormDescription>
                 <FormMessage />
               </FormItem>

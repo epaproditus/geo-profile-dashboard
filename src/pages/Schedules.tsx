@@ -163,7 +163,7 @@ const Schedules = () => {
                 Schedule Manager
               </h1>
               <p className="text-muted-foreground">
-                Schedule configuration profiles to be installed at specific times
+                Schedule configuration profiles to be installed or removed at specific times
               </p>
             </div>
             
@@ -253,6 +253,9 @@ const Schedules = () => {
                     <div className="space-y-2">
                       <div className="flex items-center">
                         <Badge variant="outline" className="mr-2">{schedule.schedule_type === "one_time" ? "One-time" : "Recurring"}</Badge>
+                        {schedule.action_type === "remove_profile" && (
+                          <Badge variant="destructive" className="mr-2">Remove</Badge>
+                        )}
                         {schedule.last_executed_at && (
                           <Badge variant="secondary">Executed</Badge>
                         )}
@@ -327,7 +330,7 @@ const Schedules = () => {
           <DialogHeader>
             <DialogTitle>Create New Schedule</DialogTitle>
             <DialogDescription>
-              Schedule a configuration profile to be installed at a specific time.
+              Schedule a configuration profile to be installed or removed at a specific time.
             </DialogDescription>
           </DialogHeader>
           
@@ -347,7 +350,7 @@ const Schedules = () => {
           <DialogHeader>
             <DialogTitle>Edit Schedule</DialogTitle>
             <DialogDescription>
-              Update this scheduled profile installation.
+              Update this scheduled profile operation.
             </DialogDescription>
           </DialogHeader>
           

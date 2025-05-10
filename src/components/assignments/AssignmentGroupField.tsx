@@ -49,7 +49,7 @@ const AssignmentGroupField: React.FC<AssignmentGroupFieldProps> = ({ form }) => 
             </Select>
           </FormControl>
           <FormDescription>
-            Select the SimpleMDM assignment group to push the profile to.
+            Select the SimpleMDM assignment group to use for profile operations.
           </FormDescription>
           <FormMessage />
         </FormItem>
