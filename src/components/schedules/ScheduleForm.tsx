@@ -3,7 +3,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, addDays, set, isValid, parseISO } from "date-fns";
-import { Calendar as CalendarIcon, Info, Loader2, Clock } from "lucide-react";
+import { Calendar as CalendarIcon, Info, Loader2, Clock, FileCheck, FileX } from "lucide-react";
 
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -623,32 +623,32 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         </div>
         
         {/* Action Type Selection */}
-        <div>
+        <div className="border rounded-md p-4 bg-muted/20 mb-4">
+          <h3 className="text-lg font-medium mb-2">Profile Action</h3>
           <FormField
             control={form.control}
             name="action_type"
             render={({ field }) => (
               <FormItem className="space-y-3">
-                <FormLabel>Profile Action</FormLabel>
                 <FormControl>
                   <RadioGroup
                     onValueChange={field.onChange}
                     defaultValue={field.value}
-                    className="flex flex-col space-y-1"
+                    className="flex space-x-4"
                   >
-                    <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormItem className="flex items-center space-x-2 space-y-0 border rounded-md p-3 flex-1 cursor-pointer data-[state=checked]:border-primary data-[state=checked]:bg-primary/5" data-state={field.value === "push_profile" ? "checked" : "unchecked"}>
                       <FormControl>
                         <RadioGroupItem value="push_profile" />
                       </FormControl>
-                      <FormLabel className="font-normal">
+                      <FormLabel className="font-medium text-base cursor-pointer">
                         Install Profile
                       </FormLabel>
                     </FormItem>
-                    <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormItem className="flex items-center space-x-2 space-y-0 border rounded-md p-3 flex-1 cursor-pointer data-[state=checked]:border-destructive data-[state=checked]:bg-destructive/5" data-state={field.value === "remove_profile" ? "checked" : "unchecked"}>
                       <FormControl>
                         <RadioGroupItem value="remove_profile" />
                       </FormControl>
-                      <FormLabel className="font-normal">
+                      <FormLabel className="font-medium text-base cursor-pointer">
                         Remove Profile
                       </FormLabel>
                     </FormItem>
@@ -664,21 +664,28 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         </div>
         
         {/* Profile Selection */}
-        <div>
+        <div className={actionType === "remove_profile" ? "border-l-4 border-destructive pl-4" : ""}>
           <FormField
             control={form.control}
             name="profile_ids"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Configuration Profiles</FormLabel>
+                {actionType === "remove_profile" ? (
+                  <div className="flex items-center mb-1">
+                    <FileX className="mr-2 h-4 w-4 text-destructive" />
+                    <FormLabel className="text-destructive font-semibold">Configuration Profiles</FormLabel>
+                  </div>
+                ) : (
+                  <FormLabel>Configuration Profiles</FormLabel>
+                )}
                 <FormControl>
                   <MultiProfileSelector
                     value={field.value}
                     onChange={field.onChange}
                   />
                 </FormControl>
-                <FormDescription>
-                  Select configuration profiles to be {form.watch("action_type") === "push_profile" ? "installed on" : "removed from"} devices at the scheduled time.
+                <FormDescription className={form.watch("action_type") === "remove_profile" ? "text-destructive" : ""}>
+                  Select configuration profiles to be <span className="font-semibold">{form.watch("action_type") === "push_profile" ? "installed on" : "removed from"}</span> devices at the scheduled time.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -835,9 +842,15 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           <Button
             type="submit"
             disabled={isPending}
+            variant={actionType === "remove_profile" ? "destructive" : "default"}
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditMode ? "Update Schedule" : "Create Schedule"}
+            {isEditMode ? "Update Schedule" : "Create Schedule"} 
+            {!isEditMode && (
+              <span className="ml-1">
+                ({actionType === "push_profile" ? "Install" : "Remove"} Profile)
+              </span>
+            )}
           </Button>
         </div>
         
