@@ -42,8 +42,9 @@ const scheduleFormSchema = z.object({
   days_of_week: z.array(z.number()).optional(),
   day_of_month: z.number().min(1).max(31).optional(),
   // Fields for SimpleMDM API integration
-  action_type: z.enum(["push_profile", "remove_profile"]).default("push_profile"),
+  action_type: z.enum(["push_profile", "remove_profile", "push_remove_profile"]).default("push_profile"),
   assignment_group_id: z.string().optional(),
+  removal_time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Must be a valid time in 24hr format (HH:MM)").optional(),
 });
 
 type ScheduleFormValues = z.infer<typeof scheduleFormSchema>;
@@ -152,21 +153,44 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
   const scheduleType = form.watch("schedule_type");
   const recurrencePattern = form.watch("recurrence_pattern");
   const actionType = form.watch("action_type");
-  
-  // Form submission
+   // Form submission
   const onSubmit = async (values: ScheduleFormValues) => {
     try {
-      // Combine date and time
+      // Combine date and time for installation
       const timeComponents = values.start_time.split(":");
       const hours = parseInt(timeComponents[0], 10);
       const minutes = parseInt(timeComponents[1], 10);
-      
+
       const startDateTime = set(values.start_date, {
         hours,
         minutes,
         seconds: 0,
         milliseconds: 0,
       });
+      
+      // Setup removal time for auto-remove if needed
+      let removalDateTime = null;
+      if (values.action_type === "push_remove_profile" && values.removal_time) {
+        const removalTimeComponents = values.removal_time.split(":");
+        const removalHours = parseInt(removalTimeComponents[0], 10);
+        const removalMinutes = parseInt(removalTimeComponents[1], 10);
+        
+        removalDateTime = set(values.start_date, {
+          hours: removalHours,
+          minutes: removalMinutes,
+          seconds: 0,
+          milliseconds: 0,
+        });
+        
+        // Validate that removal time is after installation time
+        if (removalDateTime <= startDateTime) {
+          form.setError("removal_time", {
+            type: "manual",
+            message: "Removal time must be after installation time"
+          });
+          return;
+        }
+      }
 
       if (values.profile_ids.length === 0) {
         form.setError("profile_ids", {
@@ -180,15 +204,15 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
       if (!values.assignment_group_id) {
         form.setError("assignment_group_id", {
           type: "manual",
-          message: `Please select an assignment group for profile ${values.action_type === "push_profile" ? "installation" : "removal"}`
+          message: `Please select an assignment group for profile ${values.action_type === "remove_profile" ? "removal" : "installation"}`
         });
         return;
       }
       
       // For each profile, create a separate schedule
       for (const profileId of values.profile_ids) {
-        // Prepare data for submission
-        const scheduleData = {
+        // Base schedule data - common for all types
+        const baseScheduleData = {
           name: values.profile_ids.length > 1 
             ? `${values.name} - ${profileId}` 
             : values.name,
@@ -197,7 +221,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           profile_id: profileId,
           device_filter: values.device_filter || null,
           schedule_type: values.schedule_type,
-          start_time: startDateTime.toISOString(),
           recurrence_pattern: values.schedule_type === "recurring" ? values.recurrence_pattern : null,
           days_of_week: values.days_of_week && values.days_of_week.length > 0 
             ? JSON.stringify(values.days_of_week) 
@@ -205,28 +228,69 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           day_of_month: values.day_of_month || null,
           timezone: "UTC", // Add required timezone field
           end_time: null, // Add required end_time field
-          // Add SimpleMDM API integration fields
-          action_type: values.action_type,
           assignment_group_id: values.assignment_group_id ? parseInt(values.assignment_group_id) : null,
           device_group_id: null, // Not used for profile push
           command_data: null // Not used for profile push
         };
         
-        // Create or update
-        if (isEditMode && scheduleId) {
-          // In edit mode, we're only updating a single schedule entry
-          if (profileId === values.profile_ids[0]) {
+        // Handle special case for push_remove_profile (install and auto-remove)
+        if (values.action_type === "push_remove_profile") {
+          // Create two separate schedules: one for installation and one for removal
+          
+          // 1. Installation Schedule
+          const installScheduleData = {
+            ...baseScheduleData,
+            name: `${baseScheduleData.name} - Install`,
+            start_time: startDateTime.toISOString(),
+            action_type: "push_profile"
+          };
+          
+          // 2. Removal Schedule
+          const removeScheduleData = {
+            ...baseScheduleData,
+            name: `${baseScheduleData.name} - Remove`,
+            start_time: removalDateTime.toISOString(),
+            action_type: "remove_profile"
+          };
+          
+          if (isEditMode && scheduleId) {
+            // In edit mode, update the first schedule and create the second
             await updateSchedule.mutateAsync({
               id: scheduleId,
-              ...scheduleData,
+              ...installScheduleData,
             });
+            
+            // Create the removal schedule (or update if it already exists)
+            await createSchedule.mutateAsync(removeScheduleData);
           } else {
-            // For additional profiles, create new schedules
-            await createSchedule.mutateAsync(scheduleData);
+            // Create both schedules
+            await createSchedule.mutateAsync(installScheduleData);
+            await createSchedule.mutateAsync(removeScheduleData);
           }
         } else {
-          // Create a new schedule for each profile
-          await createSchedule.mutateAsync(scheduleData);
+          // Normal single schedule (push_profile or remove_profile)
+          const scheduleData = {
+            ...baseScheduleData,
+            start_time: startDateTime.toISOString(),
+            action_type: values.action_type,
+          };
+          
+          // Create or update
+          if (isEditMode && scheduleId) {
+            // In edit mode, we're only updating a single schedule entry
+            if (profileId === values.profile_ids[0]) {
+              await updateSchedule.mutateAsync({
+                id: scheduleId,
+                ...scheduleData,
+              });
+            } else {
+              // For additional profiles, create new schedules
+              await createSchedule.mutateAsync(scheduleData);
+            }
+          } else {
+            // Create a new schedule for each profile
+            await createSchedule.mutateAsync(scheduleData);
+          }
         }
       }
       
@@ -429,7 +493,8 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
               // Function to toggle a dropdown and close all others
               const toggleDropdown = (dropdownId: string) => {
                 // Close all other dropdowns first
-                ["hour-selector", "minute-selector", "period-selector", "date-picker-calendar", "profile-selector-dropdown", "device-filter-dropdown"].forEach(id => {
+                ["hour-selector", "minute-selector", "period-selector", "date-picker-calendar", "profile-selector-dropdown", "device-filter-dropdown", 
+                 "removal-hour-selector", "removal-minute-selector", "removal-period-selector"].forEach(id => {
                   const element = document.getElementById(id);
                   if (element) element.style.display = "none";
                 });
@@ -468,6 +533,36 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                 const newTime = `${newHours24.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
                 field.onChange(newTime);
                 
+                // If we have a removal time, we might need to validate it
+                if (actionType === "push_remove_profile") {
+                  // Check if we need to adjust the removal time
+                  setTimeout(() => {
+                    const startTime = form.getValues().start_time;
+                    const removalTime = form.getValues().removal_time;
+                    
+                    if (startTime && removalTime) {
+                      const [startHoursStr, startMinutesStr] = startTime.split(':');
+                      const [removalHoursStr, removalMinutesStr] = removalTime.split(':');
+                      
+                      const startHours = parseInt(startHoursStr, 10);
+                      const startMinutes = parseInt(startMinutesStr, 10);
+                      const removalHours = parseInt(removalHoursStr, 10);
+                      const removalMinutes = parseInt(removalMinutesStr, 10);
+                      
+                      // Calculate total minutes for comparison
+                      const startTotalMinutes = startHours * 60 + startMinutes;
+                      const removalTotalMinutes = removalHours * 60 + removalMinutes;
+                      
+                      if (removalTotalMinutes <= startTotalMinutes) {
+                        // Automatically adjust removal time to be 5 hours after start time
+                        const defaultRemovalHour = (startHours + 5) % 24;
+                        const newRemovalTime = `${defaultRemovalHour.toString().padStart(2, '0')}:${startMinutesStr}`;
+                        form.setValue("removal_time", newRemovalTime);
+                      }
+                    }
+                  }, 0);
+                }
+                
                 // Close all dropdowns
                 ["hour-selector", "minute-selector", "period-selector"].forEach(id => {
                   const element = document.getElementById(id);
@@ -478,7 +573,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
               
               return (
                 <FormItem>
-                  <FormLabel>Time</FormLabel>
+                  <FormLabel>{actionType === "push_remove_profile" ? "Installation Time" : "Time"}</FormLabel>
                   <div className="grid grid-cols-3 gap-2">
                     {/* Hour Selector (12-hour format) */}
                     <div className="relative">
@@ -613,13 +708,270 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                     </div>
                   </div>
                   <FormDescription>
-                    Select hour, minute, and AM/PM
+                    Select {actionType === "push_remove_profile" ? "installation" : ""} time
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               );
             }}
           />
+          
+          {/* Removal Time Picker (only shown for push_remove_profile) */}
+          {actionType === "push_remove_profile" && (
+            <FormField
+              control={form.control}
+              name="removal_time"
+              render={({ field }) => {
+                // Initialize with default value if not set
+                if (!field.value) {
+                  // Default to 5 hours after start time
+                  const startTime = form.getValues().start_time;
+                  const [hoursStr, minutesStr] = startTime ? startTime.split(':') : ["09", "00"];
+                  const hours24 = parseInt(hoursStr, 10);
+                  const defaultRemovalHour = (hours24 + 5) % 24;
+                  field.onChange(`${defaultRemovalHour.toString().padStart(2, '0')}:${minutesStr}`);
+                }
+                
+                // Validate that removal time is after installation time
+                const validateRemovalTime = () => {
+                  const startTime = form.getValues().start_time;
+                  if (startTime && field.value) {
+                    const [startHoursStr, startMinutesStr] = startTime.split(':');
+                    const [removalHoursStr, removalMinutesStr] = field.value.split(':');
+                    
+                    const startHours = parseInt(startHoursStr, 10);
+                    const startMinutes = parseInt(startMinutesStr, 10);
+                    const removalHours = parseInt(removalHoursStr, 10);
+                    const removalMinutes = parseInt(removalMinutesStr, 10);
+                    
+                    // Calculate total minutes for comparison
+                    const startTotalMinutes = startHours * 60 + startMinutes;
+                    const removalTotalMinutes = removalHours * 60 + removalMinutes;
+                    
+                    if (removalTotalMinutes <= startTotalMinutes) {
+                      form.setError("removal_time", {
+                        type: "manual",
+                        message: "Removal time must be after installation time"
+                      });
+                    } else {
+                      form.clearErrors("removal_time");
+                    }
+                  }
+                };
+                
+                // Parse the current time value (stored in 24-hour format)
+                const [hoursStr, minutesStr] = field.value ? field.value.split(':') : ["17", "00"];
+                const hours24 = parseInt(hoursStr, 10);
+                const minutes = parseInt(minutesStr, 10);
+                
+                // Convert to 12-hour format
+                const hours12 = hours24 % 12 || 12; // Convert 0 to 12
+                const period = hours24 >= 12 ? "PM" : "AM";
+                
+                // Function to toggle a dropdown and close all others
+                const toggleDropdown = (dropdownId: string) => {
+                  // Close all other dropdowns first
+                  ["hour-selector", "minute-selector", "period-selector", "date-picker-calendar", 
+                   "removal-hour-selector", "removal-minute-selector", "removal-period-selector"].forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) element.style.display = "none";
+                  });
+                  
+                  // Then open only the current dropdown
+                  const dropdown = document.getElementById(dropdownId);
+                  if (dropdown) {
+                    dropdown.style.display = "block";
+                    setActiveDropdown(dropdownId);
+                  }
+                  
+                  // Add a click outside listener to close dropdown
+                  setTimeout(() => {
+                    const closeDropdowns = (e: MouseEvent) => {
+                      const target = e.target as HTMLElement;
+                      if (!target.closest(`#${dropdownId}`) && !target.closest(`[data-dropdown-trigger="${dropdownId}"]`)) {
+                        const dropdown = document.getElementById(dropdownId);
+                        if (dropdown) dropdown.style.display = "none";
+                        document.removeEventListener('click', closeDropdowns);
+                      }
+                    };
+                    document.addEventListener('click', closeDropdowns);
+                  }, 10);
+                };
+                
+                // Update the time in 24-hour format
+                const updateTime = (newHours12: number, newMinutes: number, newPeriod: string) => {
+                  // Convert to 24-hour format
+                  let newHours24 = newHours12;
+                  if (newPeriod === "PM" && newHours12 < 12) {
+                    newHours24 = newHours12 + 12;
+                  } else if (newPeriod === "AM" && newHours12 === 12) {
+                    newHours24 = 0;
+                  }
+                  
+                  const newTime = `${newHours24.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+                  field.onChange(newTime);
+                  
+                  // Validate removal time after change
+                  setTimeout(validateRemovalTime, 0);
+                  
+                  // Close all dropdowns
+                  ["removal-hour-selector", "removal-minute-selector", "removal-period-selector"].forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) element.style.display = "none";
+                  });
+                  setActiveDropdown(null);
+                };
+                
+                // Run validation when component mounts or when installation time changes
+                useEffect(() => {
+                  validateRemovalTime();
+                }, [form.watch("start_time")]);
+                
+                return (
+                  <FormItem>
+                    <FormLabel className="text-destructive">Removal Time</FormLabel>
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Hour Selector (12-hour format) */}
+                      <div className="relative">
+                        <Button
+                          variant="outline"
+                          type="button"
+                          data-dropdown-trigger="removal-hour-selector"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleDropdown("removal-hour-selector");
+                          }}
+                          className="w-full h-10 flex justify-between items-center border-destructive"
+                        >
+                          <span>{hours12.toString().padStart(2, '0')}</span>
+                          <span className="text-xs text-muted-foreground">Hour</span>
+                        </Button>
+                        <div 
+                          id="removal-hour-selector" 
+                          className="absolute z-50 mt-1 bg-popover rounded-md border shadow-md overflow-y-auto"
+                          style={{ display: "none", maxHeight: "200px", width: "100%" }}
+                        >
+                          <div className="p-1">
+                            {Array.from({length: 12}, (_, i) => i + 1).map((hour) => (
+                              <Button
+                                key={hour}
+                                variant="ghost"
+                                type="button"
+                                className="w-full justify-start rounded-sm font-normal"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  updateTime(hour, minutes, period);
+                                }}
+                              >
+                                {hour.toString().padStart(2, '0')}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Minute Selector */}
+                      <div className="relative">
+                        <Button
+                          variant="outline"
+                          type="button"
+                          data-dropdown-trigger="removal-minute-selector"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleDropdown("removal-minute-selector");
+                          }}
+                          className="w-full h-10 flex justify-between items-center border-destructive"
+                        >
+                          <span>{minutes.toString().padStart(2, '0')}</span>
+                          <span className="text-xs text-muted-foreground">Minute</span>
+                        </Button>
+                        <div 
+                          id="removal-minute-selector" 
+                          className="absolute z-50 mt-1 bg-popover rounded-md border shadow-md overflow-y-auto"
+                          style={{ display: "none", maxHeight: "200px", width: "100%" }}
+                        >
+                          <div className="p-1">
+                            {Array.from({length: 60}, (_, i) => i).map((min) => (
+                              <Button
+                                key={min}
+                                variant="ghost"
+                                type="button"
+                                className="w-full justify-start rounded-sm font-normal"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  updateTime(hours12, min, period);
+                                }}
+                              >
+                                {min.toString().padStart(2, '0')}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* AM/PM Selector */}
+                      <div className="relative">
+                        <Button
+                          variant="outline"
+                          type="button"
+                          data-dropdown-trigger="removal-period-selector"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleDropdown("removal-period-selector");
+                          }}
+                          className="w-full h-10 flex justify-between items-center border-destructive"
+                        >
+                          <span>{period}</span>
+                          <span className="text-xs text-muted-foreground">AM/PM</span>
+                        </Button>
+                        <div 
+                          id="removal-period-selector" 
+                          className="absolute z-50 mt-1 bg-popover rounded-md border shadow-md overflow-y-auto"
+                          style={{ display: "none", maxHeight: "200px", width: "100%" }}
+                        >
+                          <div className="p-1">
+                            <Button
+                              variant="ghost"
+                              type="button"
+                              className="w-full justify-start rounded-sm font-normal"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                updateTime(hours12, minutes, "AM");
+                              }}
+                            >
+                              AM
+                            </Button>
+                            <Button
+                              variant="ghost" 
+                              type="button"
+                              className="w-full justify-start rounded-sm font-normal"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                updateTime(hours12, minutes, "PM");
+                              }}
+                            >
+                              PM
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <FormDescription className="text-destructive">
+                      Select when the profile will be automatically removed (must be after installation time)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
+            />
+          )}
         </div>
         
         {/* Action Type Selection */}
@@ -634,28 +986,55 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
                   <RadioGroup
                     onValueChange={field.onChange}
                     defaultValue={field.value}
-                    className="flex space-x-4"
+                    className="grid grid-cols-1 md:grid-cols-3 gap-4"
                   >
-                    <FormItem className="flex items-center space-x-2 space-y-0 border rounded-md p-3 flex-1 cursor-pointer data-[state=checked]:border-primary data-[state=checked]:bg-primary/5" data-state={field.value === "push_profile" ? "checked" : "unchecked"}>
+                    <FormItem className="flex items-center space-x-2 space-y-0 border rounded-md p-3 cursor-pointer data-[state=checked]:border-primary data-[state=checked]:bg-primary/5" data-state={field.value === "push_profile" ? "checked" : "unchecked"}>
                       <FormControl>
                         <RadioGroupItem value="push_profile" />
                       </FormControl>
-                      <FormLabel className="font-medium text-base cursor-pointer">
-                        Install Profile
-                      </FormLabel>
+                      <div>
+                        <FormLabel className="font-medium text-base cursor-pointer">
+                          Install Profile
+                        </FormLabel>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          One-time or recurring installation
+                        </div>
+                      </div>
                     </FormItem>
-                    <FormItem className="flex items-center space-x-2 space-y-0 border rounded-md p-3 flex-1 cursor-pointer data-[state=checked]:border-destructive data-[state=checked]:bg-destructive/5" data-state={field.value === "remove_profile" ? "checked" : "unchecked"}>
+                    
+                    <FormItem className="flex items-center space-x-2 space-y-0 border rounded-md p-3 cursor-pointer data-[state=checked]:border-destructive data-[state=checked]:bg-destructive/5" data-state={field.value === "remove_profile" ? "checked" : "unchecked"}>
                       <FormControl>
                         <RadioGroupItem value="remove_profile" />
                       </FormControl>
-                      <FormLabel className="font-medium text-base cursor-pointer">
-                        Remove Profile
-                      </FormLabel>
+                      <div>
+                        <FormLabel className="font-medium text-base cursor-pointer">
+                          Remove Profile
+                        </FormLabel>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          One-time or recurring removal
+                        </div>
+                      </div>
+                    </FormItem>
+                    
+                    <FormItem className="flex items-center space-x-2 space-y-0 border-2 border-dashed rounded-md p-3 cursor-pointer data-[state=checked]:border-solid data-[state=checked]:border-primary data-[state=checked]:bg-primary/5" data-state={field.value === "push_remove_profile" ? "checked" : "unchecked"}>
+                      <FormControl>
+                        <RadioGroupItem value="push_remove_profile" />
+                      </FormControl>
+                      <div>
+                        <FormLabel className="font-medium text-base cursor-pointer">
+                          Install and Auto-Remove
+                        </FormLabel>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Automatic removal after installation
+                        </div>
+                      </div>
                     </FormItem>
                   </RadioGroup>
                 </FormControl>
                 <FormDescription>
-                  Choose whether to install or remove the selected profile(s) from devices.
+                  {field.value === "push_remove_profile" 
+                   ? "The profile will be installed at the specified start time and automatically removed at the removal time." 
+                   : "Choose whether to install or remove the selected profile(s) from devices."}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -848,7 +1227,9 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
             {isEditMode ? "Update Schedule" : "Create Schedule"} 
             {!isEditMode && (
               <span className="ml-1">
-                ({actionType === "push_profile" ? "Install" : "Remove"} Profile)
+                {actionType === "push_profile" && "(Install Profile)"}
+                {actionType === "remove_profile" && "(Remove Profile)"}
+                {actionType === "push_remove_profile" && "(Install & Auto-Remove)"}
               </span>
             )}
           </Button>
