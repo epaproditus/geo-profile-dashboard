@@ -12,6 +12,7 @@ import Geofences from "./pages/Geofences";
 import Devices from "./pages/Devices";
 import Profiles from "./pages/Profiles";
 import Schedules from "./pages/Schedules";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import SimpleMDMTest from "./pages/SimpleMDMTest";
 import AppCatalog from "./pages/AppCatalog";
@@ -64,6 +65,7 @@ const App = () => {
             <Route path="/simplemdm-test" element={<AuthCheck><SimpleMDMTest /></AuthCheck>} />
             <Route path="/test-cards" element={<AuthCheck><TestCardLayout /></AuthCheck>} />
             <Route path="/policy-assignment-test" element={<AuthCheck><PolicyAssignmentTest /></AuthCheck>} />
+            <Route path="/admin" element={<AuthCheck requireAdmin={true}><Admin /></AuthCheck>} />
             
             {/* Fallback route */}
             <Route path="*" element={<NotFound />} />

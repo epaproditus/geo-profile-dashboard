@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PlusCircle, Calendar, Clock, Loader2, CheckCircle2, XCircle, Settings, CalendarClock, FileCheck2, FileX } from "lucide-react";
+import { PlusCircle, Calendar, Clock, Loader2, CheckCircle2, XCircle, Settings, CalendarClock, FileCheck2, FileX, ShieldAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSchedules, useToggleScheduleStatus, useDeleteSchedule } from "@/hooks/use-schedules";
 import { useAllProfiles } from "@/hooks/use-simplemdm";
 import ScheduleForm from "@/components/schedules/ScheduleForm";
 import { formatDistanceToNow, format, parseISO } from "date-fns";
+import { AdminActionButton } from "@/components/AdminAction";
+import { AdminOnly } from "@/components/AdminOnly";
+import { isCurrentUserAdmin } from "@/lib/admin";
 
 const Schedules = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -114,6 +117,13 @@ const Schedules = () => {
   const handleDelete = async (id) => {
     if (confirm("Are you sure you want to delete this schedule?")) {
       try {
+        // Check if user is admin before proceeding
+        const isAdmin = await isCurrentUserAdmin();
+        if (!isAdmin) {
+          alert("Only administrators can delete schedules.");
+          return;
+        }
+        
         const { supabase } = await import('@/lib/supabase');
         const { error } = await supabase
           .from('schedules')
@@ -134,6 +144,13 @@ const Schedules = () => {
   // Handle toggle status
   const handleToggleStatus = async (id, currentStatus) => {
     try {
+      // Check if user is admin before proceeding
+      const isAdmin = await isCurrentUserAdmin();
+      if (!isAdmin) {
+        alert("Only administrators can change schedule status.");
+        return;
+      }
+      
       const { supabase } = await import('@/lib/supabase');
       const { error } = await supabase
         .from('schedules')
@@ -167,11 +184,25 @@ const Schedules = () => {
               </p>
             </div>
             
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <AdminActionButton onClick={() => setIsCreateDialogOpen(true)}>
               <PlusCircle className="mr-2 h-4 w-4" />
               New Schedule
-            </Button>
+            </AdminActionButton>
           </div>
+          
+          {/* Admin Notice */}
+          <AdminOnly
+            fallback={
+              <Alert className="mb-6">
+                <ShieldAlert className="h-4 w-4 mr-2" />
+                <AlertDescription>
+                  Only administrators can create, edit, or delete schedules. You can view existing schedules but cannot modify them.
+                </AlertDescription>
+              </Alert>
+            }
+          >
+            {null}
+          </AdminOnly>
           
           {/* Filter options */}
           <div className="flex items-center justify-between mb-6">
@@ -220,10 +251,10 @@ const Schedules = () => {
                     ? "No schedules have been executed yet."
                     : "You haven't created any schedules yet."}
                 </p>
-                <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <AdminActionButton onClick={() => setIsCreateDialogOpen(true)}>
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Create Schedule
-                </Button>
+                </AdminActionButton>
               </CardContent>
             </Card>
           ) : (
@@ -294,7 +325,7 @@ const Schedules = () => {
                   </CardContent>
                   
                   <CardFooter className="pt-2 flex justify-between">
-                    <Button 
+                    <AdminActionButton 
                       variant="ghost" 
                       size="sm"
                       onClick={() => handleToggleStatus(schedule.id, schedule.enabled)}
@@ -310,25 +341,25 @@ const Schedules = () => {
                           Enable
                         </>
                       )}
-                    </Button>
+                    </AdminActionButton>
                     
                     <div className="space-x-1">
-                      <Button 
+                      <AdminActionButton 
                         variant="ghost" 
                         size="sm"
                         onClick={() => setEditScheduleId(schedule.id)}
                       >
                         Edit
-                      </Button>
+                      </AdminActionButton>
                       
-                      <Button 
+                      <AdminActionButton 
                         variant="ghost" 
                         size="sm" 
                         className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
                         onClick={() => handleDelete(schedule.id)}
                       >
                         Delete
-                      </Button>
+                      </AdminActionButton>
                     </div>
                   </CardFooter>
                 </Card>

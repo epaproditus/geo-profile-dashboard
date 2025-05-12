@@ -18,10 +18,14 @@ import {
   Menu,
   User,
   AppWindow,
-  CalendarClock
+  CalendarClock,
+  Shield,
+  UserCog
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { signOut, getCurrentUser } from '../lib/supabase';
+import { isCurrentUserAdmin } from "@/lib/admin";
+import { AdminOnly } from "@/components/AdminOnly";
 
 const Navbar = () => {
   const location = useLocation();
@@ -30,6 +34,7 @@ const Navbar = () => {
   const isMobile = useIsMobile();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const handleLogout = () => {
     localStorage.removeItem("isAuthenticated");
@@ -58,6 +63,12 @@ const Navbar = () => {
       try {
         const user = await getCurrentUser();
         setUserEmail(user?.email || null);
+        
+        // Check if user is an admin
+        if (user) {
+          const adminStatus = await isCurrentUserAdmin();
+          setIsAdmin(adminStatus);
+        }
       } catch (error) {
         console.error('Error fetching user:', error);
       }
@@ -120,6 +131,16 @@ const Navbar = () => {
                     </Link>
                   </DropdownMenuItem>
                 ))}
+                
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/admin" className="flex items-center">
+                      <UserCog className="h-4 w-4 mr-2" />
+                      Admin
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                
                 <DropdownMenuItem className="text-red-500" onClick={handleLogout}>
                   <LogOut className="h-4 w-4 mr-2" />
                   Logout
@@ -143,6 +164,19 @@ const Navbar = () => {
                   {item.label}
                 </Link>
               ))}
+              
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className={`flex items-center text-sm font-medium transition-colors ${
+                    location.pathname === "/admin"
+                      ? "text-primary"
+                      : "text-amber-600 hover:text-amber-700"
+                  }`}
+                >
+                  Admin
+                </Link>
+              )}
             </nav>
 
             <div className="flex items-center gap-4">
@@ -152,11 +186,29 @@ const Navbar = () => {
                     <Button variant="ghost" size="icon" className="rounded-full">
                       <User className="h-5 w-5" />
                       <span className="hidden md:inline">{userEmail}</span>
+                      {isAdmin && <Shield className="ml-1 h-3 w-3 text-amber-600" />}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    <DropdownMenuLabel>
+                      My Account
+                      {isAdmin && (
+                        <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-800 rounded-full px-2 py-0.5">
+                          Admin
+                        </span>
+                      )}
+                    </DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    
+                    {isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link to="/admin" className="flex items-center cursor-pointer">
+                          <UserCog className="mr-2 h-4 w-4" />
+                          <span>Admin Panel</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    
                     <DropdownMenuItem onClick={handleSignOut} className="text-red-600 cursor-pointer">
                       <LogOut className="mr-2 h-4 w-4" />
                       <span>Sign out</span>

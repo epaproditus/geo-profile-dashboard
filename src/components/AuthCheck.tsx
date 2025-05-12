@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '../lib/supabase';
-import { Loader2 } from 'lucide-react';
+import { isCurrentUserAdmin } from '../lib/admin';
+import { Loader2, ShieldAlert } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
 interface AuthCheckProps {
   children: React.ReactNode;
+  requireAdmin?: boolean;
 }
 
-const AuthCheck: React.FC<AuthCheckProps> = ({ children }) => {
+const AuthCheck: React.FC<AuthCheckProps> = ({ children, requireAdmin = false }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -26,6 +30,12 @@ const AuthCheck: React.FC<AuthCheckProps> = ({ children }) => {
         
         // User is authenticated
         setIsAuthenticated(true);
+        
+        // Check admin status if required
+        if (requireAdmin) {
+          const adminStatus = await isCurrentUserAdmin();
+          setIsAdmin(adminStatus);
+        }
       } catch (error) {
         console.error('Authentication error:', error);
         // On error, redirect to login as a fallback
@@ -36,7 +46,7 @@ const AuthCheck: React.FC<AuthCheckProps> = ({ children }) => {
     };
 
     checkAuth();
-  }, [navigate]);
+  }, [navigate, requireAdmin]);
 
   if (isLoading) {
     return (
@@ -47,7 +57,22 @@ const AuthCheck: React.FC<AuthCheckProps> = ({ children }) => {
     );
   }
 
-  // Only render children if authenticated
+  // If admin is required but user is not an admin
+  if (requireAdmin && !isAdmin) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <Alert variant="destructive" className="max-w-md">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertTitle>Access Denied</AlertTitle>
+          <AlertDescription>
+            You need administrator privileges to access this page.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Only render children if authenticated (and admin if required)
   return isAuthenticated ? <>{children}</> : null;
 };
 
