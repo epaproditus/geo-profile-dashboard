@@ -195,12 +195,7 @@ const Navbar = () => {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
                     <DropdownMenuLabel>
-                      My Account
-                      {isAdmin && (
-                        <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-800 rounded-full px-2 py-0.5">
-                          Admin
-                        </span>
-                      )}
+                      {isAdmin ? 'Admin User' : 'Standard User'}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     
