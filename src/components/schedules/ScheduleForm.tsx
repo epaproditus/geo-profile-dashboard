@@ -51,7 +51,7 @@ type ScheduleFormValues = z.infer<typeof scheduleFormSchema>;
 interface ScheduleFormProps {
   scheduleId?: string;
   onSuccess: () => void;
-  onCancel: () void;
+  onCancel: () => void;
 }
 
 const ScheduleForm: React.FC<ScheduleFormProps> = ({
