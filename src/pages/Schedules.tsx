@@ -12,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSchedules, useToggleScheduleStatus, useDeleteSchedule } from "@/hooks/use-schedules";
 import { useAllProfiles } from "@/hooks/use-simplemdm";
 import ScheduleForm from "@/components/schedules/ScheduleForm";
-import { formatDistanceToNow, format, parseISO } from "date-fns";
+import { formatDistanceToNow, format, parseISO, addDays, addWeeks, addMonths, isAfter } from "date-fns";
 
 const Schedules = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -68,6 +68,14 @@ const Schedules = () => {
       return schedule.last_executed_at !== null;
     }
     if (viewTab === "upcoming") {
+      // Show one-time schedules that haven't been executed yet
+      if (schedule.schedule_type === "one_time") {
+        return schedule.last_executed_at === null;
+      }
+      // For recurring schedules, show them if they're enabled (regardless of past execution)
+      else if (schedule.schedule_type === "recurring") {
+        return schedule.enabled;
+      }
       return schedule.last_executed_at === null;
     }
     return true; // "all" tab
@@ -77,6 +85,110 @@ const Schedules = () => {
   const getProfileName = (profileId) => {
     const profile = profilesData?.data?.find(p => p.id.toString() === profileId);
     return profile?.attributes?.name || "Unknown Profile";
+  };
+  
+  // Calculate the next execution date for a recurring schedule
+  const getNextExecutionDate = (schedule) => {
+    if (schedule.schedule_type !== "recurring" || !schedule.enabled) {
+      return null;
+    }
+    
+    try {
+      const now = new Date();
+      let startDate = parseISO(schedule.start_time);
+      let nextDate = null;
+      
+      // If this is our first calculation or there's no last execution date, use the start date
+      if (!schedule.last_executed_at) {
+        if (isAfter(startDate, now)) {
+          return startDate;
+        }
+      }
+      
+      // Get the time components from the start_time
+      const hours = startDate.getHours();
+      const minutes = startDate.getMinutes();
+      
+      // For previously executed schedules, calculate next occurrence based on recurrence pattern
+      const lastExecuted = schedule.last_executed_at ? parseISO(schedule.last_executed_at) : now;
+      
+      switch (schedule.recurrence_pattern) {
+        case "daily":
+          // Next day at the same time
+          nextDate = addDays(lastExecuted, 1);
+          nextDate.setHours(hours, minutes, 0, 0);
+          
+          // If we're already past today's time, use tomorrow
+          if (!isAfter(nextDate, now)) {
+            nextDate = addDays(nextDate, 1);
+          }
+          break;
+          
+        case "weekly":
+          // Weekly logic - start with tomorrow and find the next day of week
+          nextDate = addDays(lastExecuted, 1);
+          nextDate.setHours(hours, minutes, 0, 0);
+          
+          // Find the next scheduled day of the week
+          if (schedule.days_of_week && schedule.days_of_week.length > 0) {
+            let found = false;
+            
+            // Look ahead up to 7 days to find the next matching day
+            for (let i = 0; i < 7; i++) {
+              const checkDate = addDays(nextDate, i);
+              const dayOfWeek = checkDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+              
+              if (schedule.days_of_week.includes(dayOfWeek)) {
+                nextDate = checkDate;
+                nextDate.setHours(hours, minutes, 0, 0);
+                found = true;
+                break;
+              }
+            }
+            
+            // If no match found, add a week to last execution
+            if (!found) {
+              nextDate = addWeeks(lastExecuted, 1);
+              nextDate.setHours(hours, minutes, 0, 0);
+            }
+          } else {
+            // If no specific days set, just add a week
+            nextDate = addWeeks(lastExecuted, 1);
+            nextDate.setHours(hours, minutes, 0, 0);
+          }
+          break;
+          
+        case "monthly":
+          // Monthly on same day of month
+          nextDate = addMonths(lastExecuted, 1);
+          
+          // If day_of_month is specified, use that
+          if (schedule.day_of_month) {
+            // Make sure to handle edge cases for months with fewer days
+            const daysInMonth = new Date(
+              nextDate.getFullYear(), 
+              nextDate.getMonth() + 1, 
+              0
+            ).getDate();
+            
+            const dayToUse = Math.min(schedule.day_of_month, daysInMonth);
+            nextDate.setDate(dayToUse);
+          }
+          
+          nextDate.setHours(hours, minutes, 0, 0);
+          break;
+          
+        default:
+          // Default to daily if pattern not recognized
+          nextDate = addDays(lastExecuted, 1);
+          nextDate.setHours(hours, minutes, 0, 0);
+      }
+      
+      return nextDate;
+    } catch (e) {
+      console.error("Error calculating next execution date:", e);
+      return null;
+    }
   };
   
   // Format schedule time display
@@ -215,7 +327,7 @@ const Schedules = () => {
                 <h3 className="text-lg font-medium mb-2">No schedules found</h3>
                 <p className="text-muted-foreground text-center max-w-md mb-4">
                   {viewTab === "upcoming" 
-                    ? "You don't have any upcoming scheduled profile installations."
+                    ? "You don't have any upcoming or active recurring scheduled profile installations."
                     : viewTab === "past" 
                     ? "No schedules have been executed yet."
                     : "You haven't created any schedules yet."}
@@ -289,6 +401,20 @@ const Schedules = () => {
                         <p className="text-sm text-muted-foreground">
                           Executed {formatDistanceToNow(parseISO(schedule.last_executed_at))} ago
                         </p>
+                      )}
+                      
+                      {/* Show next execution time for recurring schedules */}
+                      {schedule.schedule_type === "recurring" && schedule.enabled && (
+                        <>
+                          {viewTab === "upcoming" && (
+                            <p className="text-sm text-primary">
+                              {getNextExecutionDate(schedule) 
+                                ? `Next: ${format(getNextExecutionDate(schedule), "PPP 'at' p")}`
+                                : "Next execution pending"
+                              }
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   </CardContent>
