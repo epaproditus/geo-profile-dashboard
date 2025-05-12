@@ -24,7 +24,6 @@ import { useAllProfiles } from "@/hooks/use-simplemdm";
 import ProfileSelector from "@/components/schedules/ProfileSelector";
 import DeviceFilterSelector from "@/components/schedules/DeviceFilterSelector";
 import { MultiProfileSelector } from "@/components/schedules/ProfileSelector";
-import AssignmentGroupField from '@/components/assignments/AssignmentGroupField';
 
 // Form validation schema
 const scheduleFormSchema = z.object({
@@ -200,14 +199,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
         return;
       }
       
-      // Validate assignment group for SimpleMDM profile actions
-      if (!values.assignment_group_id) {
-        form.setError("assignment_group_id", {
-          type: "manual",
-          message: `Please select an assignment group for profile ${values.action_type === "remove_profile" ? "removal" : "installation"}`
-        });
-        return;
-      }
       
       // For each profile, create a separate schedule
       for (const profileId of values.profile_ids) {
@@ -228,7 +219,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
           day_of_month: values.day_of_month || null,
           timezone: "UTC", // Add required timezone field
           end_time: null, // Add required end_time field
-          assignment_group_id: values.assignment_group_id ? parseInt(values.assignment_group_id) : null,
+          assignment_group_id: null, // No longer using assignment groups
           device_group_id: null, // Not used for profile push
           command_data: null // Not used for profile push
         };
@@ -1093,11 +1084,6 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
               </FormItem>
             )}
           />
-        </div>
-
-        {/* SimpleMDM Assignment Group */}
-        <div>
-          <AssignmentGroupField form={form} />
         </div>
         
         {/* Recurring Schedule Options */}
