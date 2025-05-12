@@ -49,16 +49,20 @@ export default async function handler(req, res) {
 
     // Find schedules due for execution
     const now = new Date();
-    // Look for schedules that should have run in the last 15 minutes
-    // This accommodates for cron jobs that might not run exactly on schedule
-    const pastWindow = new Date(now.getTime() - 15 * 60 * 1000);
+    
+    // Create precise time windows for exact minute execution
+    // Look for schedules due in the current minute (+/- 30 seconds to account for cron timing)
+    const startWindow = new Date(now.getTime() - 30 * 1000); // 30 seconds ago
+    const endWindow = new Date(now.getTime() + 30 * 1000);   // 30 seconds in the future
+    
+    console.log(`Searching for schedules in current minute: ${startWindow.toISOString()} - ${endWindow.toISOString()}`);
     
     const { data: schedulesToExecute, error: schedulesError } = await supabase
       .from('schedules')
       .select('*')
       .eq('enabled', true)
-      .lte('start_time', now.toISOString())
-      .gt('start_time', pastWindow.toISOString())
+      .lte('start_time', endWindow.toISOString())
+      .gt('start_time', startWindow.toISOString())
       .is('last_executed_at', null)
       .order('start_time', { ascending: true });
     

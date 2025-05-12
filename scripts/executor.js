@@ -455,17 +455,25 @@ async function executeSchedules() {
     
     // Find schedules due for execution
     const now = new Date();
-    // Look for schedules that should have run in the last 15 minutes
-    const pastWindow = new Date(now.getTime() - 15 * 60 * 1000);
-
-    log(`Looking for schedules due between ${pastWindow.toISOString()} and ${now.toISOString()}`);
+    
+    // Create precise time windows for exact minute execution
+    // Look for schedules due in the current minute (+/- 30 seconds to account for cron timing)
+    const startWindow = new Date(now.getTime() - 30 * 1000); // 30 seconds ago
+    const endWindow = new Date(now.getTime() + 30 * 1000);   // 30 seconds in the future
+    
+    // Format dates for more readable logs
+    const formatTime = (date) => {
+      return date.toISOString().substr(0, 19).replace('T', ' ');
+    };
+    
+    log(`Looking for schedules due between ${formatTime(startWindow)} and ${formatTime(endWindow)} (current minute window)`);
 
     const { data: schedulesToExecute, error: schedulesError } = await supabase
       .from('schedules')
       .select('*')
       .eq('enabled', true)
-      .lte('start_time', now.toISOString())  // Only schedules due now or in the past
-      .gt('start_time', pastWindow.toISOString())
+      .lte('start_time', endWindow.toISOString())  
+      .gt('start_time', startWindow.toISOString())
       .is('last_executed_at', null)
       .order('start_time', { ascending: true});
     
