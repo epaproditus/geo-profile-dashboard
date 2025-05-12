@@ -183,10 +183,14 @@ const Navbar = () => {
               {userEmail && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-full">
+                    <Button variant="ghost" className="rounded-full flex items-center gap-2">
                       <User className="h-5 w-5" />
                       <span className="hidden md:inline">{userEmail}</span>
-                      {isAdmin && <Shield className="ml-1 h-3 w-3 text-amber-600" />}
+                      {isAdmin && (
+                        <span className="bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 text-xs font-medium">
+                          Admin
+                        </span>
+                      )}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">

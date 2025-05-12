@@ -15,6 +15,7 @@ Administrators have the following capabilities that standard users do not:
 - Editing existing schedules
 - Deleting schedules
 - Changing schedule status (enable/disable)
+- Creating, editing, and deleting policies
 - Managing other users (via the Admin page)
 
 ## Setting Up Admin Users
@@ -79,5 +80,17 @@ The admin functionality is implemented through:
 
 - Supabase user metadata with an `is_admin` flag
 - SQL functions that check admin status
-- Row-level security policies in the database
+- Row-level security policies in the database (for schedules and policies)
 - React components that conditionally render based on admin status
+
+### Row-Level Security Policies
+
+The following tables have admin-specific RLS policies:
+
+1. **Schedules Table**:
+   - Only admins can insert, update, or delete schedules
+   - All users can view schedules
+
+2. **Policies Table**:
+   - Only admins can insert, update, or delete policies
+   - All users can view policies
