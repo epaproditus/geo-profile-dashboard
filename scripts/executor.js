@@ -295,7 +295,6 @@ async function executeDeviceAction(schedule) {
         
       case 'push_profile':
         // Implementation for pushing a profile to devices
-        const assignmentGroupId = schedule.assignment_group_id;
         const profileId = schedule.profile_id;
         const deviceFilter = schedule.device_filter;
         
@@ -303,14 +302,7 @@ async function executeDeviceAction(schedule) {
           return { success: false, message: 'No profile_id specified for push_profile action' };
         }
         
-        // Check if we're pushing via assignment group
-        if (assignmentGroupId) {
-          log(`Pushing profile ${profileId} to assignment group ${assignmentGroupId}`);
-          await callSimpleMDM(`assignment_groups/${assignmentGroupId}/profiles/${profileId}`, 'POST');
-          return { success: true, message: `Profile ${profileId} pushed to assignment group ${assignmentGroupId}` };
-        }
-        
-        // Otherwise, we need to find the target devices and push directly
+        // Find target devices and push profile directly using the proper SimpleMDM API
         try {
           // If device_filter is specified, find matching devices
           let targetDevices = [];
@@ -326,14 +318,14 @@ async function executeDeviceAction(schedule) {
             targetDevices = response.data || [];
             log(`Found ${targetDevices.length} devices in group ${schedule.device_group_id}`);
           } else {
-            return { success: false, message: 'No assignment_group_id, device_group_id, or device_filter specified for push_profile action' };
+            return { success: false, message: 'No device_group_id or device_filter specified for push_profile action' };
           }
           
           if (targetDevices.length === 0) {
             return { success: false, message: 'No matching devices found for the profile push' };
           }
           
-          // Push the profile to each device
+          // Push the profile to each device using the direct API endpoint
           log(`Pushing profile ${profileId} to ${targetDevices.length} devices`);
           const results = await Promise.all(
             targetDevices.map(device => 
@@ -350,11 +342,6 @@ async function executeDeviceAction(schedule) {
         } catch (error) {
           log(`Error pushing profile: ${error.message}`);
           return { success: false, message: `Error pushing profile: ${error.message}` };
-        }
-        
-        return { 
-          success: true, 
-          message: `Profile ${profileId} assigned to assignment group ${assignmentGroupId}` 
         };
 
       case 'remove_profile':
