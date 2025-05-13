@@ -35,8 +35,9 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// Import SimpleMDM proxy handler
+// Import handlers
 import simpleMdmProxyHandler from './api/simplemdm-proxy.js';
+import quickProfilesHandler from './api/quick-profiles.js';
 
 // SimpleMDM API proxy route
 app.all('/api/simplemdm/*', async (req, res) => {
@@ -50,17 +51,14 @@ app.all('/api/simplemdm/*', async (req, res) => {
   }
 });
 
-// Import SimpleMDM proxy handler
-import simpleMdmProxyHandler from './api/simplemdm-proxy.js';
-
-// SimpleMDM API proxy route
-app.all('/api/simplemdm/*', async (req, res) => {
-  console.log(`SimpleMDM API proxy request: ${req.method} ${req.url}`);
+// Quick profiles API route
+app.all('/api/quick-profiles', async (req, res) => {
+  console.log(`Quick profiles API request: ${req.method}`);
   try {
-    // Call the proxy handler
-    return await simpleMdmProxyHandler(req, res);
+    // Call the quick profiles handler
+    return await quickProfilesHandler(req, res);
   } catch (error) {
-    console.error('Error in SimpleMDM proxy endpoint:', error);
+    console.error('Error in quick profiles endpoint:', error);
     return res.status(500).json({ error: 'Internal Server Error', message: error.message });
   }
 });
