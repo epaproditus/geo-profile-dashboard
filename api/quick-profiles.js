@@ -1,324 +1,285 @@
-// Quick Profile Scheduler API Endpoint
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js';
+import fetch from 'node-fetch';
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// SimpleMDM API key
+const SIMPLEMDM_API_KEY = process.env.SIMPLEMDM_API_KEY;
 
 export default async function handler(req, res) {
+  // Extract the JWT token from the Authorization header
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Missing or invalid authorization token' });
+  }
+  
+  const token = authHeader.split(' ')[1];
+  
   try {
-    // Initialize Supabase client
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
-      return res.status(500).json({ error: 'Server error', message: 'Supabase configuration missing' })
-    }
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    
-    // Authorization check
-    const authHeader = req.headers.authorization
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Unauthorized', message: 'Valid authentication token required' })
-    }
-    
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    // Verify the token and get the user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
     if (authError || !user) {
-      return res.status(401).json({ 
-        error: 'Unauthorized', 
-        message: authError?.message || 'Invalid authentication token' 
-      })
+      console.error('Auth error:', authError);
+      return res.status(401).json({ message: 'Invalid or expired token' });
     }
+    
+    const userId = user.id;
     
     // Handle different HTTP methods
-    switch (req.method) {
-      case 'GET':
-        return await getQuickProfiles(req, res, supabase, user)
-      case 'POST':
-        return await createQuickProfile(req, res, supabase, user)
-      case 'DELETE':
-        return await cancelQuickProfile(req, res, supabase, user)
-      default:
-        return res.status(405).json({ error: 'Method not allowed' })
+    if (req.method === 'GET') {
+      return await getQuickProfileAssignments(req, res, userId);
+    } else if (req.method === 'POST') {
+      return await createQuickProfileAssignment(req, res, userId);
+    } else if (req.method === 'DELETE') {
+      return await cancelQuickProfileAssignment(req, res, userId);
+    } else {
+      return res.status(405).json({ message: 'Method not allowed' });
     }
   } catch (error) {
-    console.error('Quick profile scheduler API error:', error)
-    return res.status(500).json({
-      error: 'Server error',
-      message: error.message || 'An unexpected error occurred'
-    })
+    console.error('Server error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 }
 
-// Get all quick profile assignments for the user
-async function getQuickProfiles(req, res, supabase, user) {
+/**
+ * Get quick profile assignments for the current user
+ */
+async function getQuickProfileAssignments(req, res, userId) {
   try {
-    const { data, error } = await supabase.rpc('get_quick_profile_assignments')
+    // Get assignments from the database
+    const { data, error } = await supabase.rpc('get_quick_profile_assignments');
     
-    if (error) {
-      return res.status(500).json({ error: 'Database error', message: error.message })
-    }
+    if (error) throw error;
     
-    // Fetch profile and device details to enrich the response
-    const enriched = await enrichAssignments(data, supabase)
+    // Enhance the response with profile and device information
+    const enhancedData = await Promise.all(data.map(async (assignment) => {
+      // Get profile information from SimpleMDM
+      const profileInfo = await fetchSimpleMDMProfile(assignment.profile_id);
+      
+      // Get device information from SimpleMDM
+      const deviceInfo = await fetchSimpleMDMDevice(assignment.device_id);
+      
+      return {
+        ...assignment,
+        profile: profileInfo,
+        device: deviceInfo
+      };
+    }));
     
-    return res.status(200).json({ data: enriched })
+    return res.status(200).json({ data: enhancedData });
   } catch (error) {
-    console.error('Error fetching quick profiles:', error)
-    return res.status(500).json({ error: 'Server error', message: error.message })
+    console.error('Error getting assignments:', error);
+    return res.status(500).json({ message: 'Failed to get assignments' });
   }
 }
 
-// Create a new quick profile assignment
-async function createQuickProfile(req, res, supabase, user) {
+/**
+ * Create a new quick profile assignment
+ */
+async function createQuickProfileAssignment(req, res, userId) {
+  const { profileId, deviceId, durationMinutes } = req.body;
+  
+  if (!profileId || !deviceId || !durationMinutes) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+  
+  // Check if the profileId is in the allowed list
+  const allowedProfileIds = [173535, 173628];
+  if (!allowedProfileIds.includes(parseInt(profileId))) {
+    return res.status(403).json({ message: 'Profile ID not allowed for quick scheduling' });
+  }
+  
   try {
-    const { profileId, deviceId, durationMinutes } = req.body
-    
-    // Validate inputs
-    if (!profileId || !deviceId || !durationMinutes) {
-      return res.status(400).json({ 
-        error: 'Invalid request', 
-        message: 'profileId, deviceId, and durationMinutes are required' 
-      })
-    }
-    
-    // Validate profile ID is one of the allowed profiles
-    if (![173535, 173628].includes(Number(profileId))) {
-      return res.status(400).json({
-        error: 'Invalid profile',
-        message: 'Only specific profiles are allowed for quick scheduling'
-      })
-    }
-    
-    // Create the assignment
-    const { data: assignmentId, error } = await supabase.rpc(
+    // Create the assignment in the database
+    const { data, error } = await supabase.rpc(
       'create_quick_profile_assignment',
       {
-        _profile_id: profileId,
-        _device_id: deviceId,
-        _duration_minutes: durationMinutes
+        _profile_id: parseInt(profileId),
+        _device_id: parseInt(deviceId),
+        _duration_minutes: parseInt(durationMinutes)
       }
-    )
+    );
     
-    if (error) {
-      return res.status(500).json({ error: 'Database error', message: error.message })
-    }
+    if (error) throw error;
     
-    // Immediately push the profile to the device using SimpleMDM API
-    try {
-      const simpleMdmApiKey = process.env.SIMPLE_MDM_API_KEY
-      
-      if (!simpleMdmApiKey) {
-        return res.status(500).json({ 
-          error: 'Server error', 
-          message: 'SimpleMDM API key not configured' 
-        })
-      }
-      
-      // Make request to SimpleMDM API
-      const simpleMdmUrl = `https://a.simplemdm.com/api/v1/profiles/${profileId}/devices/${deviceId}`
-      
-      const simpleMdmOptions = {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${Buffer.from(`${simpleMdmApiKey}:`).toString('base64')}`,
-          'Content-Type': 'application/json'
-        }
-      }
-      
-      const pushResponse = await fetch(simpleMdmUrl, simpleMdmOptions)
-      
-      if (!pushResponse.ok) {
-        console.error('Failed to push profile to device:', await pushResponse.text())
-        
-        // Update the assignment status to 'failed'
-        await supabase
-          .from('quick_profile_assignments')
-          .update({ status: 'failed' })
-          .eq('id', assignmentId)
-        
-        return res.status(500).json({
-          error: 'Profile push failed',
-          message: 'Failed to push profile to device'
-        })
-      }
-      
-      // Update the assignment status to 'installed'
-      await supabase
-        .from('quick_profile_assignments')
-        .update({ status: 'installed' })
-        .eq('id', assignmentId)
-      
-      return res.status(200).json({ 
-        success: true, 
-        message: 'Profile scheduled and pushed to device',
-        data: { assignmentId }
-      })
-    } catch (apiError) {
-      console.error('SimpleMDM API error:', apiError)
-      
-      // Update the assignment status to 'failed'
+    // Push the profile to the device using SimpleMDM API
+    const profilePushResult = await pushProfileToDevice(profileId, deviceId);
+    
+    if (!profilePushResult.success) {
+      // Update status to failed if the push failed
       await supabase
         .from('quick_profile_assignments')
         .update({ status: 'failed' })
-        .eq('id', assignmentId)
-      
-      return res.status(500).json({
-        error: 'API error',
-        message: apiError.message || 'Failed to communicate with SimpleMDM API'
-      })
-    }
-  } catch (error) {
-    console.error('Error creating quick profile:', error)
-    return res.status(500).json({ error: 'Server error', message: error.message })
-  }
-}
-
-// Cancel an existing quick profile assignment
-async function cancelQuickProfile(req, res, supabase, user) {
-  try {
-    const { assignmentId } = req.query
-    
-    if (!assignmentId) {
-      return res.status(400).json({ 
-        error: 'Invalid request', 
-        message: 'assignmentId is required' 
-      })
+        .eq('id', data);
+        
+      return res.status(500).json({ message: 'Failed to push profile to device' });
     }
     
-    // Get the assignment details first
-    const { data: assignment, error: fetchError } = await supabase
+    // Update status to installed
+    await supabase
       .from('quick_profile_assignments')
-      .select('*')
-      .eq('id', assignmentId)
-      .single()
+      .update({ status: 'installed' })
+      .eq('id', data);
     
-    if (fetchError || !assignment) {
-      return res.status(404).json({ 
-        error: 'Not found', 
-        message: 'Assignment not found or access denied' 
-      })
-    }
-    
-    // Cancel the assignment
-    const { data: success, error } = await supabase.rpc(
-      'cancel_quick_profile_assignment',
-      { _assignment_id: assignmentId }
-    )
-    
-    if (error) {
-      return res.status(500).json({ error: 'Database error', message: error.message })
-    }
-    
-    if (!success) {
-      return res.status(404).json({ 
-        error: 'Not found', 
-        message: 'Assignment not found or access denied' 
-      })
-    }
-    
-    // Remove the profile from the device using SimpleMDM API
-    try {
-      const simpleMdmApiKey = process.env.SIMPLE_MDM_API_KEY
-      
-      if (!simpleMdmApiKey) {
-        return res.status(500).json({ 
-          error: 'Server error', 
-          message: 'SimpleMDM API key not configured' 
-        })
-      }
-      
-      // Make request to SimpleMDM API to remove the profile
-      const simpleMdmUrl = `https://a.simplemdm.com/api/v1/profiles/${assignment.profile_id}/devices/${assignment.device_id}`
-      
-      const simpleMdmOptions = {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Basic ${Buffer.from(`${simpleMdmApiKey}:`).toString('base64')}`,
-          'Content-Type': 'application/json'
-        }
-      }
-      
-      await fetch(simpleMdmUrl, simpleMdmOptions)
-      
-      return res.status(200).json({ 
-        success: true, 
-        message: 'Profile assignment canceled and removed from device' 
-      })
-    } catch (apiError) {
-      console.error('SimpleMDM API error:', apiError)
-      return res.status(500).json({
-        error: 'API error',
-        message: apiError.message || 'Failed to communicate with SimpleMDM API'
-      })
-    }
+    return res.status(201).json({ 
+      message: 'Profile assignment created successfully',
+      assignmentId: data
+    });
   } catch (error) {
-    console.error('Error canceling quick profile:', error)
-    return res.status(500).json({ error: 'Server error', message: error.message })
+    console.error('Error creating assignment:', error);
+    return res.status(500).json({ message: 'Failed to create assignment' });
   }
 }
 
-// Helper to enrich assignments with profile and device details
-async function enrichAssignments(assignments, supabase) {
-  // Get the SimpleMDM profile and device details to add to the assignments
-  const simpleMdmApiKey = process.env.SIMPLE_MDM_API_KEY
+/**
+ * Cancel a quick profile assignment
+ */
+async function cancelQuickProfileAssignment(req, res, userId) {
+  const { assignmentId } = req.query;
   
-  if (!simpleMdmApiKey) {
-    console.warn('SimpleMDM API key not configured, returning raw assignments')
-    return assignments
+  if (!assignmentId) {
+    return res.status(400).json({ message: 'Missing assignment ID' });
   }
   
   try {
-    const simpleMdmUrl = "https://a.simplemdm.com/api/v1"
-    const simpleMdmHeaders = {
-      'Authorization': `Basic ${Buffer.from(`${simpleMdmApiKey}:`).toString('base64')}`,
-      'Content-Type': 'application/json'
+    // Get the assignment first to check if it belongs to the user
+    const { data: assignments, error: fetchError } = await supabase
+      .from('quick_profile_assignments')
+      .select('profile_id, device_id, status')
+      .eq('id', assignmentId)
+      .eq('user_id', userId);
+    
+    if (fetchError) throw fetchError;
+    
+    if (!assignments || assignments.length === 0) {
+      return res.status(404).json({ message: 'Assignment not found' });
     }
     
-    // Get profile details for the specific IDs we care about (173535 and 173628)
-    const profilesResponse = await fetch(`${simpleMdmUrl}/profiles`, {
-      headers: simpleMdmHeaders
-    })
+    const assignment = assignments[0];
     
-    const profilesData = await profilesResponse.json()
-    const profilesMap = {}
-    
-    if (profilesData && profilesData.data) {
-      profilesData.data.forEach(profile => {
-        profilesMap[profile.id] = {
-          name: profile.attributes.name,
-          description: profile.attributes.description,
-          type: profile.type
-        }
-      })
+    // If the assignment is installed, try to remove the profile
+    if (assignment.status === 'installed') {
+      try {
+        await removeProfileFromDevice(assignment.profile_id, assignment.device_id);
+      } catch (removeError) {
+        console.error('Error removing profile:', removeError);
+        // Continue with cancellation even if removal fails
+      }
     }
     
-    // Get all devices
-    const devicesResponse = await fetch(`${simpleMdmUrl}/devices`, {
-      headers: simpleMdmHeaders
-    })
+    // Update the assignment status
+    const { data, error } = await supabase.rpc(
+      'cancel_quick_profile_assignment',
+      { _assignment_id: parseInt(assignmentId) }
+    );
     
-    const devicesData = await devicesResponse.json()
-    const devicesMap = {}
+    if (error) throw error;
     
-    if (devicesData && devicesData.data) {
-      devicesData.data.forEach(device => {
-        devicesMap[device.id] = {
-          name: device.attributes.name,
-          serialNumber: device.attributes.serial_number,
-          lastSeen: device.attributes.last_seen_at
-        }
-      })
-    }
-    
-    // Enrich the assignments with profile and device details
-    return assignments.map(assignment => ({
-      ...assignment,
-      profile: profilesMap[assignment.profile_id] || { name: `Profile ${assignment.profile_id}` },
-      device: devicesMap[assignment.device_id] || { name: `Device ${assignment.device_id}` }
-    }))
+    return res.status(200).json({ message: 'Assignment cancelled successfully' });
   } catch (error) {
-    console.error('Error enriching assignments:', error)
-    return assignments
+    console.error('Error cancelling assignment:', error);
+    return res.status(500).json({ message: 'Failed to cancel assignment' });
+  }
+}
+
+/**
+ * Fetch profile information from SimpleMDM
+ */
+async function fetchSimpleMDMProfile(profileId) {
+  try {
+    const response = await fetch(`https://a.simplemdm.com/api/v1/profiles/${profileId}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(SIMPLEMDM_API_KEY + ':').toString('base64')}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch profile: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return {
+      id: data.data.id,
+      name: data.data.attributes.name
+    };
+  } catch (error) {
+    console.error(`Error fetching profile ${profileId}:`, error);
+    return { id: profileId, name: `Profile ${profileId}` };
+  }
+}
+
+/**
+ * Fetch device information from SimpleMDM
+ */
+async function fetchSimpleMDMDevice(deviceId) {
+  try {
+    const response = await fetch(`https://a.simplemdm.com/api/v1/devices/${deviceId}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(SIMPLEMDM_API_KEY + ':').toString('base64')}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch device: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return {
+      id: data.data.id,
+      name: data.data.attributes.name || `Device ${deviceId}`
+    };
+  } catch (error) {
+    console.error(`Error fetching device ${deviceId}:`, error);
+    return { id: deviceId, name: `Device ${deviceId}` };
+  }
+}
+
+/**
+ * Push a profile to a device using SimpleMDM API
+ */
+async function pushProfileToDevice(profileId, deviceId) {
+  try {
+    const response = await fetch(`https://a.simplemdm.com/api/v1/devices/${deviceId}/profiles/${profileId}/install`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(SIMPLEMDM_API_KEY + ':').toString('base64')}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to push profile: ${response.statusText}`);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error pushing profile:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Remove a profile from a device using SimpleMDM API
+ */
+async function removeProfileFromDevice(profileId, deviceId) {
+  try {
+    const response = await fetch(`https://a.simplemdm.com/api/v1/devices/${deviceId}/profiles/${profileId}/remove`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(SIMPLEMDM_API_KEY + ':').toString('base64')}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to remove profile: ${response.statusText}`);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error removing profile:', error);
+    return { success: false, error: error.message };
   }
 }
