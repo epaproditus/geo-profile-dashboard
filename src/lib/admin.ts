@@ -13,7 +13,10 @@ export const isCurrentUserAdmin = async (): Promise<boolean> => {
     if (!user) return false;
     
     // Check if the user has admin metadata
-    const isAdmin = user.user_metadata?.is_admin === true;
+    const isAdmin = 
+      user.user_metadata?.is_admin === true || 
+      user.user_metadata?.is_super_admin === true || 
+      user.user_metadata?.role === 'admin';
     
     // If metadata is available, return the result
     if (typeof isAdmin === 'boolean') {

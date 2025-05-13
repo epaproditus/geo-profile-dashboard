@@ -6,14 +6,23 @@ CREATE OR REPLACE FUNCTION public.is_admin(user_id uuid)
 RETURNS boolean AS $$
 DECLARE
   _is_admin boolean;
+  _is_super_admin boolean;
+  _role text;
 BEGIN
   -- Query the user's metadata from auth.users
-  SELECT (raw_user_meta_data->>'is_admin')::boolean INTO _is_admin
+  SELECT 
+    (raw_user_meta_data->>'is_admin')::boolean,
+    (raw_user_meta_data->>'is_super_admin')::boolean,
+    (raw_user_meta_data->>'role')
+  INTO 
+    _is_admin, _is_super_admin, _role
   FROM auth.users
   WHERE id = user_id;
   
-  -- Return false if the user has no admin flag set
-  RETURN COALESCE(_is_admin, false);
+  -- Check all possible admin indicators
+  RETURN COALESCE(_is_admin, false) OR 
+         COALESCE(_is_super_admin, false) OR 
+         COALESCE(_role, '') = 'admin';
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -75,7 +84,12 @@ BEGIN
     SELECT
       u.id,
       COALESCE(u.email, u.phone, '(no email)') as email,
-      COALESCE((u.raw_user_meta_data->>'is_admin')::boolean, false) as is_admin,
+      COALESCE(
+        (u.raw_user_meta_data->>'is_admin')::boolean, 
+        (u.raw_user_meta_data->>'is_super_admin')::boolean, 
+        u.raw_user_meta_data->>'role' = 'admin', 
+        false
+      ) as is_admin,
       u.created_at
     FROM auth.users u
     ORDER BY u.created_at DESC;
@@ -85,7 +99,12 @@ BEGIN
     SELECT
       u.id,
       COALESCE(u.email, u.phone, '(no email)') as email,
-      COALESCE((u.raw_user_meta_data->>'is_admin')::boolean, false) as is_admin,
+      COALESCE(
+        (u.raw_user_meta_data->>'is_admin')::boolean, 
+        (u.raw_user_meta_data->>'is_super_admin')::boolean, 
+        u.raw_user_meta_data->>'role' = 'admin', 
+        false
+      ) as is_admin,
       u.created_at
     FROM auth.users u
     WHERE u.id = current_user_id;
