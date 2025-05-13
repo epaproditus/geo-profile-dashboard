@@ -1,7 +1,5 @@
-// filepath: /Users/abe/Documents/VSCode/geo-profile-dashboard/api/quick-profiles.js
 // Quick Profile Scheduler API Endpoint
 import { createClient } from '@supabase/supabase-js'
-import { simplemdmApi } from '../src/lib/api/simplemdm'
 
 export default async function handler(req, res) {
   try {
