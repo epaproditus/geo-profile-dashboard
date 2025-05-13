@@ -69,28 +69,17 @@ export default async function handler(req, res) {
       console.log('Running in server context, bypassing admin check');
     }
     
-    // Use the RPC function that updates both is_super_admin fields
-    const { data: rpcData, error: rpcError } = await supabase.rpc('set_super_admin_status', {
-      target_user_id: userId,
-      admin_status: isAdmin
+    // Update user admin status - only updating metadata (simpler approach)
+    const { data, error } = await supabase.auth.admin.updateUserById(userId, {
+      user_metadata: { 
+        is_admin: isAdmin,
+        is_super_admin: isAdmin 
+      }
     });
     
-    if (rpcError) {
-      console.error('Error using set_super_admin_status RPC:', rpcError);
-      
-      // Fall back to direct metadata update
-      console.log('Falling back to direct metadata update');
-      const { data, error } = await supabase.auth.admin.updateUserById(userId, {
-        user_metadata: { 
-          is_admin: isAdmin,
-          is_super_admin: isAdmin 
-        }
-      });
-      
-      if (error) {
-        console.error('Error updating user:', error);
-        return res.status(500).json({ error: 'Failed to update user' });
-      }
+    if (error) {
+      console.error('Error updating user:', error);
+      return res.status(500).json({ error: 'Failed to update user' });
     }
     
     return res.status(200).json({
