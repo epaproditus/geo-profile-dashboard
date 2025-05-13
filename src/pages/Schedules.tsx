@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PlusCircle, Calendar, Clock, Loader2, CheckCircle2, XCircle, Settings, CalendarClock, FileCheck2, FileX, ShieldAlert } from "lucide-react";
+import { PlusCircle, Calendar, Clock, Loader2, CheckCircle2, XCircle, Settings, CalendarClock, FileCheck2, FileX, ShieldAlert, Timer } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSchedules, useToggleScheduleStatus, useDeleteSchedule } from "@/hooks/use-schedules";
 import { useAllProfiles } from "@/hooks/use-simplemdm";
 import ScheduleForm from "@/components/schedules/ScheduleForm";
+import QuickSchedule from "@/components/schedules/QuickSchedule";
 import { formatDistanceToNow, format, parseISO } from "date-fns";
 import { AdminActionButton } from "@/components/AdminAction";
 import { AdminOnly } from "@/components/AdminOnly";
@@ -19,10 +20,21 @@ import { isCurrentUserAdmin } from "@/lib/admin";
 
 const Schedules = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isQuickScheduleOpen, setIsQuickScheduleOpen] = useState(false);
   const [editScheduleId, setEditScheduleId] = useState<string | null>(null);
   const [viewTab, setViewTab] = useState<string>("upcoming");
+  const [isAdmin, setIsAdmin] = useState(false);
   
   const navigate = useNavigate();
+  
+  // Check if user is admin when component mounts
+  useEffect(() => {
+    const checkAdmin = async () => {
+      const admin = await isCurrentUserAdmin();
+      setIsAdmin(admin);
+    };
+    checkAdmin();
+  }, []);
   
   // Fetch schedules - using direct approach
   const [schedules, setSchedules] = useState([]);
@@ -406,6 +418,26 @@ const Schedules = () => {
               fetchSchedules(); // Refresh data when form is submitted
             }} 
             onCancel={() => setEditScheduleId(null)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Schedule Dialog */}
+      <Dialog open={isQuickScheduleOpen} onOpenChange={setIsQuickScheduleOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>Quick Schedule</DialogTitle>
+            <DialogDescription>
+              Quickly schedule a profile installation or removal.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <QuickSchedule 
+            onSuccess={() => {
+              setIsQuickScheduleOpen(false);
+              fetchSchedules(); // Refresh data when form is submitted
+            }} 
+            onCancel={() => setIsQuickScheduleOpen(false)}
           />
         </DialogContent>
       </Dialog>
