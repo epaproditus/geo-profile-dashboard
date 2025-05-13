@@ -66,14 +66,20 @@ async function syncAdminFields() {
         if (metaIsSuperAdmin !== rootIsSuperAdmin) {
           console.log(`  → Found inconsistency, fixing...`);
           
-          // Use RPC function to fix both fields
-          const { error: rpcError } = await supabase.rpc('set_super_admin_status', {
-            target_user_id: user.id,
-            admin_status: true
-          });
+          // Instead of using the RPC function (which has admin checks), 
+          // directly update both fields using the admin API
+          const { error: updateError } = await supabase.auth.admin.updateUserById(
+            user.id,
+            {
+              user_metadata: {
+                ...user.user_metadata,
+                is_super_admin: true
+              }
+            }
+          );
           
-          if (rpcError) {
-            console.error(`  ✗ Error fixing user ${user.email || user.id}:`, rpcError);
+          if (updateError) {
+            console.error(`  ✗ Error fixing user ${user.email || user.id}:`, updateError);
           } else {
             console.log(`  ✓ Fixed user ${user.email || user.id}`);
             fixedCount++;
