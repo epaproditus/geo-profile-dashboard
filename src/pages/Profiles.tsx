@@ -173,6 +173,9 @@ const Profiles = () => {
                                 )}
                               </CardTitle>
                             </div>
+                            <CardDescription className="text-gray-500 text-xs mt-1">
+                              ID: {profile.id}
+                            </CardDescription>
                             <CardDescription>
                               {profile.attributes?.description || 
                                `${getProfileTypeDisplay(profile.type)} Profile`}
