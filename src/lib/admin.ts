@@ -12,18 +12,16 @@ export const isCurrentUserAdmin = async (): Promise<boolean> => {
     
     if (!user) return false;
     
-    // Check if the user has admin metadata
-    const isAdmin = 
-      user.user_metadata?.is_admin === true || 
-      user.user_metadata?.is_super_admin === true || 
-      user.user_metadata?.role === 'admin';
+    // Simplified check: only look for is_admin in metadata
+    const isAdmin = user.user_metadata?.is_admin === true;
     
-    // If metadata is available, return the result
-    if (typeof isAdmin === 'boolean') {
-      return isAdmin;
+    // If direct check is conclusive, return the result
+    if (isAdmin === true) {
+      return true;
     }
     
     // As a fallback, check using the database function
+    // This is needed for backward compatibility with existing data
     const { data, error } = await supabase.rpc('is_admin', { 
       user_id: user.id 
     });

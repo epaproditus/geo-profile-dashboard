@@ -69,11 +69,10 @@ export default async function handler(req, res) {
       console.log('Running in server context, bypassing admin check');
     }
     
-    // Update user admin status - only updating metadata (simpler approach)
+    // Update user admin status - focus only on is_admin field going forward
     const { data, error } = await supabase.auth.admin.updateUserById(userId, {
       user_metadata: { 
-        is_admin: isAdmin,
-        is_super_admin: isAdmin 
+        is_admin: isAdmin
       }
     });
     
