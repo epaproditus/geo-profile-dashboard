@@ -6,16 +6,17 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+let supabase;
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error('Missing Supabase environment variables');
+} else {
+  supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
 
 export default async function handler(req, res) {
   console.log('Admin status API called:', req.method, req.body);
@@ -23,6 +24,15 @@ export default async function handler(req, res) {
   // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+  
+  // Check if Supabase is initialized
+  if (!supabase) {
+    console.error('Supabase client is not initialized');
+    return res.status(500).json({ 
+      error: 'Server configuration error', 
+      message: 'Database connection not available'
+    });
   }
   
   try {
