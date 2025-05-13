@@ -63,10 +63,10 @@ BEGIN
   FROM auth.users
   WHERE id = user_id;
   
-  -- Combine both is_super_admin values
+  -- Combine both is_super_admin values (either one being true means the user is a super admin)
   _is_super_admin := COALESCE(_meta_is_super_admin, false) OR COALESCE(_root_is_super_admin, false);
   
-  -- Check all possible admin indicators
+  -- Check all possible admin indicators (any of these being true means the user is an admin)
   RETURN COALESCE(_is_admin, false) OR 
          _is_super_admin OR 
          COALESCE(_role, '') = 'admin';
