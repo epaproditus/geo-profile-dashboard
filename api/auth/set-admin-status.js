@@ -1,5 +1,6 @@
 // Set admin status for a user
 import { createClient } from '@supabase/supabase-js';
+// Ensure this file is treated as an ES module
 
 // Initialize Supabase client
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,6 +18,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 export default async function handler(req, res) {
+  console.log('Admin status API called:', req.method, req.body);
+  
   // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });

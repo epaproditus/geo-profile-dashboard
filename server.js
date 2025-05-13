@@ -22,6 +22,15 @@ app.all('/api/schedules/execute', async (req, res) => {
   return await handler(req, res);
 });
 
+// Import the admin status handler
+import setAdminStatusHandler from './api/auth/set-admin-status.js';
+
+// API endpoint for setting admin status
+app.all('/api/auth/set-admin-status', async (req, res) => {
+  // Wrap the serverless function for Express
+  return await setAdminStatusHandler(req, res);
+});
+
 // Serve static files from the build directory
 app.use(express.static(join(__dirname, 'dist')));
 
