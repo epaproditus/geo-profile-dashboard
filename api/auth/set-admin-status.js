@@ -2,20 +2,32 @@
 import { createClient } from '@supabase/supabase-js';
 // Ensure this file is treated as an ES module
 
-// Initialize Supabase client
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+// Initialize Supabase client - try all possible environment variable names
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Log what we've found
+console.log('set-admin-status.js - Supabase initialization:');
+console.log('- SUPABASE_URL:', process.env.SUPABASE_URL ? 'Set' : 'Not set');
+console.log('- VITE_SUPABASE_URL:', process.env.VITE_SUPABASE_URL ? 'Set' : 'Not set');
+console.log('- Using URL:', supabaseUrl ? supabaseUrl : 'None available');
+console.log('- Service key available:', supabaseServiceKey ? 'Yes' : 'No');
 
 let supabase;
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error('Missing Supabase environment variables');
 } else {
-  supabase = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
+  try {
+    supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+    console.log('Supabase client initialized successfully');
+  } catch (error) {
+    console.error('Error initializing Supabase client:', error);
+  }
 }
 
 export default async function handler(req, res) {
