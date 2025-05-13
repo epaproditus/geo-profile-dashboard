@@ -21,12 +21,14 @@ BEGIN
   FROM auth.users
   WHERE id = user_id;
   
-  -- Simplify the check - prioritize is_admin field but maintain backward compatibility
-  -- Primarily check the is_admin field (this is our desired field moving forward)
-  RETURN COALESCE(_is_admin, false) OR
-         -- These are for backward compatibility with existing data 
-         COALESCE(_meta_is_super_admin, false) OR 
-         COALESCE(_root_is_super_admin, false) OR
-         COALESCE(_role, '') = 'admin';
+  -- Simplify the check - ONLY use is_admin field for clarity and consistency
+  -- This forces us to be more disciplined about where admin status is stored
+  RETURN COALESCE(_is_admin, false);
+  
+  -- NOTE: Comment out the code below AFTER all users are migrated to use is_admin field!
+  -- These checks are only for backward compatibility during migration:
+  -- OR COALESCE(_meta_is_super_admin, false) 
+  -- OR COALESCE(_root_is_super_admin, false)
+  -- OR COALESCE(_role, '') = 'admin';
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

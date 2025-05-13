@@ -69,16 +69,41 @@ export default async function handler(req, res) {
       console.log('Running in server context, bypassing admin check');
     }
     
-    // Update user admin status - focus only on is_admin field going forward
+    // First get current user metadata to preserve other fields
+    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+    
+    if (userError) {
+      console.error('Error getting user data:', userError);
+      return res.status(500).json({ error: 'Failed to get user data' });
+    }
+    
+    // Update both metadata and root level admin fields for compatibility during transition
     const { data, error } = await supabase.auth.admin.updateUserById(userId, {
       user_metadata: { 
-        is_admin: isAdmin
+        is_admin: isAdmin,
+        is_super_admin: isAdmin
       }
     });
     
     if (error) {
-      console.error('Error updating user:', error);
+      console.error('Error updating user metadata:', error);
       return res.status(500).json({ error: 'Failed to update user' });
+    }
+    
+    // Also update the root is_super_admin field directly with SQL
+    try {
+      console.log(`Updating root is_super_admin field to ${isAdmin}`);
+      const { error: sqlError } = await supabase.rpc('update_root_super_admin', { 
+        target_user_id: userId, 
+        admin_status: isAdmin 
+      });
+      
+      if (sqlError) {
+        console.error('Error updating root is_super_admin field:', sqlError);
+        // Continue even if this fails - metadata update is more important
+      }
+    } catch (sqlErr) {
+      console.error('Exception updating root is_super_admin field:', sqlErr);
     }
     
     return res.status(200).json({
