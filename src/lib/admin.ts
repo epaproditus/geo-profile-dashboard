@@ -66,8 +66,10 @@ export const getUsersWithAdminStatus = async () => {
  */
 export const setUserAdminStatus = async (userId: string, isAdmin: boolean) => {
   try {
+    // Get the base URL of the current page to ensure we're using the correct domain
+    const baseUrl = window.location.origin;
     // Call the server-side API endpoint that properly handles all admin fields
-    const response = await fetch('/api/auth/set-admin-status', {
+    const response = await fetch(`${baseUrl}/api/auth/set-admin-status`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
