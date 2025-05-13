@@ -485,27 +485,8 @@ export const simplemdmApi = {
     try {
       const response = await apiClient.delete(requestUrl);
       
-      // Log the successful API call
-      await logApiCall({
-        scheduleId,
-        actionType: 'remove_profile',
-        profileId,
-        deviceId,
-        requestUrl,
-        requestMethod: 'DELETE',
-        responseStatus: response.status,
-        responseBody: response.data,
-        success: true
-      });
-      
-      console.log(`Profile ${profileId} successfully removed from device ${deviceId}`);
-      return { success: true, data: response.data };
-    } catch (error: any) {
-      // Handle 409 conflict errors - likely means the profile is not installed or already removed
-      if (error?.response?.status === 409) {
-        console.log(`Profile ${profileId} was not removed from device ${deviceId} - 409 Conflict (profile may not be installed)`);
-        
-        // Still log this as a successful API call since the end result is what we want
+      // Log the successful API call if scheduleId is provided
+      if (scheduleId) {
         await logApiCall({
           scheduleId,
           actionType: 'remove_profile',
@@ -513,43 +494,50 @@ export const simplemdmApi = {
           deviceId,
           requestUrl,
           requestMethod: 'DELETE',
-          responseStatus: 409,
-          success: true,
-          errorMessage: 'Profile not found on device (already removed)'
+          responseStatus: response.status,
+          responseBody: response.data,
+          success: true
         });
-        
-        return { success: true, alreadyRemoved: true };
       }
       
-      // Log the failed API call
-      await logApiCall({
-        scheduleId,
-        actionType: 'remove_profile',
-        profileId,
-        deviceId,
-        requestUrl,
-        requestMethod: 'DELETE',
-        responseStatus: error.response?.status,
-        success: false,
-        errorMessage: error.message
-      });
-      
-      console.error(`Failed to remove profile ${profileId} from device ${deviceId}:`, error);
-      throw error;
-    }
-  },
-  async removeProfileFromDevice(profileId: number | string, deviceId: number | string) {
-    console.log(`Removing profile ${profileId} from device ${deviceId}`);
-    
-    try {
-      const response = await apiClient.delete(`/profiles/${profileId}/devices/${deviceId}`);
       console.log(`Profile ${profileId} successfully removed from device ${deviceId}`);
       return { success: true, data: response.data };
     } catch (error: any) {
       // Handle 409 conflict errors - likely means the profile is not installed or already removed
       if (error?.response?.status === 409) {
         console.log(`Profile ${profileId} was not removed from device ${deviceId} - 409 Conflict (profile may not be installed)`);
+        
+        // Still log this as a successful API call if scheduleId is provided
+        if (scheduleId) {
+          await logApiCall({
+            scheduleId,
+            actionType: 'remove_profile',
+            profileId,
+            deviceId,
+            requestUrl,
+            requestMethod: 'DELETE',
+            responseStatus: 409,
+            success: true,
+            errorMessage: 'Profile not found on device (already removed)'
+          });
+        }
+        
         return { success: true, alreadyRemoved: true };
+      }
+      
+      // Log the failed API call if scheduleId is provided
+      if (scheduleId) {
+        await logApiCall({
+          scheduleId,
+          actionType: 'remove_profile',
+          profileId,
+          deviceId,
+          requestUrl,
+          requestMethod: 'DELETE',
+          responseStatus: error.response?.status,
+          success: false,
+          errorMessage: error.message
+        });
       }
       
       console.error(`Failed to remove profile ${profileId} from device ${deviceId}:`, error);
