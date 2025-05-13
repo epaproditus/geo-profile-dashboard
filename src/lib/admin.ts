@@ -66,27 +66,24 @@ export const getUsersWithAdminStatus = async () => {
  */
 export const setUserAdminStatus = async (userId: string, isAdmin: boolean) => {
   try {
-    // First try to update super admin status (which updates both fields)
-    const { data: superData, error: superError } = await supabase.rpc('set_super_admin_status', {
-      target_user_id: userId,
-      admin_status: isAdmin
+    // Call the server-side API endpoint that properly handles all admin fields
+    const response = await fetch('/api/auth/set-admin-status', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        userId, 
+        isAdmin,
+        currentUserToken: (await supabase.auth.getSession()).data.session?.access_token
+      }),
     });
     
-    if (!superError) {
-      return { success: true, error: null };
-    }
+    const result = await response.json();
     
-    // If the super_admin function fails, fall back to the regular admin function
-    console.warn('Failed to update super_admin status, falling back to regular admin update:', superError);
-    
-    const { data, error } = await supabase.rpc('set_user_admin_status', {
-      target_user_id: userId,
-      admin_status: isAdmin
-    });
-    
-    if (error) {
-      console.error('Error setting admin status:', error);
-      return { success: false, error };
+    if (!response.ok) {
+      console.error('Error setting admin status:', result);
+      return { success: false, error: result.error };
     }
     
     return { success: true, error: null };
