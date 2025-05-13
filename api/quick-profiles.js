@@ -1,6 +1,6 @@
 // Quick Profile Scheduler API Endpoint
 import { createClient } from '@supabase/supabase-js'
-import { simpleMdmApi } from '../../src/lib/api/simplemdm'
+import { simpleMdmApi } from '../src/lib/api/simplemdm'
 
 export default async function handler(req, res) {
   try {
