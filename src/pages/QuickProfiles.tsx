@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useSession } from "@supabase/auth-helpers-react";
 import AuthCheck from "@/components/AuthCheck";
 import Navbar from "@/components/Navbar";
 import { useToast } from "@/hooks/use-toast";
+import { supabase, getCurrentUser } from "@/lib/supabase";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, Calendar, Clock, XCircle, Check, AlertCircle } from "lucide-react";
@@ -19,8 +19,8 @@ const ALLOWED_PROFILE_IDS = ["173535", "173628"];
 
 // Main component
 const QuickProfiles = () => {
-  const { session } = useSession();
   const { toast } = useToast();
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   
   // State for form inputs
   const [selectedProfileId, setSelectedProfileId] = useState("");
@@ -44,20 +44,28 @@ const QuickProfiles = () => {
   
   // Load quick profile assignments
   useEffect(() => {
-    if (session) {
-      fetchQuickProfiles();
-    }
-  }, [session]);
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        setAccessToken(session.access_token);
+        fetchQuickProfiles(session.access_token);
+      }
+    };
+    
+    getSession();
+  }, []);
   
   // Fetch quick profile assignments for the current user
-  const fetchQuickProfiles = async () => {
+  const fetchQuickProfiles = async (token = accessToken) => {
+    if (!token) return;
+    
     setIsLoading(true);
     setError(null);
     
     try {
       const response = await fetch("/api/quick-profiles", {
         headers: {
-          "Authorization": `Bearer ${session?.access_token}`
+          "Authorization": `Bearer ${token}`
         }
       });
       
@@ -84,7 +92,7 @@ const QuickProfiles = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!selectedProfileId || !selectedDeviceId) {
+    if (!selectedProfileId || !selectedDeviceId || !accessToken) {
       toast({
         title: "Validation Error",
         description: "Please select both a profile and a device",
@@ -100,7 +108,7 @@ const QuickProfiles = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${session?.access_token}`
+          "Authorization": `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           profileId: selectedProfileId,
@@ -140,11 +148,13 @@ const QuickProfiles = () => {
   
   // Handle assignment cancellation
   const handleCancelAssignment = async (assignmentId) => {
+    if (!accessToken) return;
+    
     try {
       const response = await fetch(`/api/quick-profiles?assignmentId=${assignmentId}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${session?.access_token}`
+          "Authorization": `Bearer ${accessToken}`
         }
       });
       
@@ -176,7 +186,7 @@ const QuickProfiles = () => {
       case "scheduled":
         return <Badge variant="secondary">Scheduled</Badge>;
       case "installed":
-        return <Badge variant="success" className="bg-green-500">Installed</Badge>;
+        return <Badge className="bg-green-500 text-white">Installed</Badge>;
       case "removed":
         return <Badge variant="outline">Removed</Badge>;
       case "failed":
