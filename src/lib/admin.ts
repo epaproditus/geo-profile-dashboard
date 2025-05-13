@@ -68,6 +68,19 @@ export const getUsersWithAdminStatus = async () => {
  */
 export const setUserAdminStatus = async (userId: string, isAdmin: boolean) => {
   try {
+    // First try to update super admin status (which updates both fields)
+    const { data: superData, error: superError } = await supabase.rpc('set_super_admin_status', {
+      target_user_id: userId,
+      admin_status: isAdmin
+    });
+    
+    if (!superError) {
+      return { success: true, error: null };
+    }
+    
+    // If the super_admin function fails, fall back to the regular admin function
+    console.warn('Failed to update super_admin status, falling back to regular admin update:', superError);
+    
     const { data, error } = await supabase.rpc('set_user_admin_status', {
       target_user_id: userId,
       admin_status: isAdmin
