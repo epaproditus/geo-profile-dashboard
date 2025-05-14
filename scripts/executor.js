@@ -244,7 +244,7 @@ async function fetchFilteredDevices(filter, supabaseClient) {
 }
 
 // Function to execute a device update based on schedule type
-async function executeDeviceAction(schedule) {
+async function executeDeviceAction(schedule, supabaseClient) {
   if (!schedule.action_type) {
     log(`No action_type specified for schedule ${schedule.id}`);
     return { success: false, message: 'No action_type specified' };
@@ -316,7 +316,7 @@ async function executeDeviceAction(schedule) {
           let targetDevices = [];
           if (deviceFilter) {
             log(`Finding devices matching filter: ${JSON.stringify(deviceFilter)}`);
-            const devices = await fetchFilteredDevices(deviceFilter, supabase);
+            const devices = await fetchFilteredDevices(deviceFilter, supabaseClient);
             targetDevices = devices.data || [];
             log(`Found ${targetDevices.length} matching devices`);
           } else if (schedule.device_group_id) {
@@ -337,7 +337,7 @@ async function executeDeviceAction(schedule) {
           log(`Pushing profile ${profileId} to ${targetDevices.length} devices`);
           const results = await Promise.all(
             targetDevices.map(device => 
-              pushProfileToDevice(profileId, device.id, schedule.id, supabase)
+              pushProfileToDevice(profileId, device.id, schedule.id, supabaseClient)
             )
           );
           
@@ -371,7 +371,7 @@ async function executeDeviceAction(schedule) {
           let targetDevicesToRemove = [];
           if (removeDeviceFilter) {
             log(`Finding devices matching filter for profile removal: ${JSON.stringify(removeDeviceFilter)}`);
-            const devicesToRemove = await fetchFilteredDevices(removeDeviceFilter, supabase);
+            const devicesToRemove = await fetchFilteredDevices(removeDeviceFilter, supabaseClient);
             targetDevicesToRemove = devicesToRemove.data || [];
             log(`Found ${targetDevicesToRemove.length} matching devices for profile removal`);
           } else if (schedule.device_group_id) {
@@ -392,7 +392,7 @@ async function executeDeviceAction(schedule) {
           log(`Removing profile ${removeProfileId} from ${targetDevicesToRemove.length} devices`);
           const removalResults = await Promise.all(
             targetDevicesToRemove.map(device => 
-              removeProfileFromDevice(removeProfileId, device.id, schedule.id, supabase)
+              removeProfileFromDevice(removeProfileId, device.id, schedule.id, supabaseClient)
             )
           );
           
@@ -534,7 +534,7 @@ async function executeSchedules() {
         log(`Executing schedule ${schedule.id}`);
         
         // Execute the appropriate action based on schedule type
-        const actionResult = await executeDeviceAction(schedule);
+        const actionResult = await executeDeviceAction(schedule, supabase);
         
         // For recurring schedules, calculate the next execution time
         let updateData = { last_executed_at: now.toISOString() };
