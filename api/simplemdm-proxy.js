@@ -41,18 +41,27 @@ export default async function proxyHandler(req, res) {
         })
       }
       
-      // Check if user is admin
-      const { data: isAdmin, error: adminCheckError } = await supabaseAdmin.rpc('is_admin', {
-        user_id: user.id
-      })
+      // Get the path parts from the URL to check if this is a profile push operation
+      const urlPath = req.url.replace(/^\/api\/simplemdm\//, '')
       
-      if (adminCheckError) {
-        console.error('Error checking admin status:', adminCheckError)
-        return res.status(500).json({ error: 'Server error', message: 'Failed to verify permissions' })
-      }
+      // Check if this is a profile push operation (POST to /profiles/{id}/devices/{id})
+      const isProfilePush = req.method === 'POST' && /^profiles\/\d+\/devices\/\d+$/.test(urlPath)
       
-      if (!isAdmin) {
-        return res.status(403).json({ error: 'Forbidden', message: 'Admin privileges required' })
+      // If this is not a profile push, check for admin privileges
+      if (!isProfilePush) {
+        // Check if user is admin
+        const { data: isAdmin, error: adminCheckError } = await supabaseAdmin.rpc('is_admin', {
+          user_id: user.id
+        })
+        
+        if (adminCheckError) {
+          console.error('Error checking admin status:', adminCheckError)
+          return res.status(500).json({ error: 'Server error', message: 'Failed to verify permissions' })
+        }
+        
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Forbidden', message: 'Admin privileges required' })
+        }
       }
     }
     
