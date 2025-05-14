@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { useEffect, useState } from 'react'
 
 // These environment variables need to be set in your Vite project
 // and in your Vercel deployment
@@ -10,6 +11,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+// Hook for using Supabase client in components
+export const useSupabase = () => {
+  return { supabase }
+}
 
 // Helper functions for auth
 export const signInWithEmail = async (email: string) => {
