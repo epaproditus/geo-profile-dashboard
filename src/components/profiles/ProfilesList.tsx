@@ -293,13 +293,20 @@ const DeployProfileDialog: React.FC<DeployProfileDialogProps> = ({
   profileId
 }) => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [isTemporary, setIsTemporary] = useState<boolean>(false);
+  const [temporaryDuration, setTemporaryDuration] = useState<number>(30);
   const { data: devicesData, isLoading: isLoadingDevices } = useDevices({ limit: 100 });
   const pushProfile = usePushProfileToDevice();
   
   const handleDeployProfile = () => {
     if (profileId && selectedDeviceId) {
       pushProfile.mutate(
-        { profileId, deviceId: selectedDeviceId },
+        { 
+          profileId, 
+          deviceId: selectedDeviceId,
+          isTemporary,
+          temporaryDuration
+        },
         {
           onSuccess: () => {
             onOpenChange(false);
@@ -316,7 +323,7 @@ const DeployProfileDialog: React.FC<DeployProfileDialogProps> = ({
         <DialogHeader>
           <DialogTitle>Deploy Profile to Device</DialogTitle>
           <DialogDescription>
-            Select a device to deploy this profile to. The profile will be installed on the device the next time it checks in.
+            Select a device to deploy this profile to. The profile will be installed on the device shortly.
           </DialogDescription>
         </DialogHeader>
         
@@ -348,6 +355,41 @@ const DeployProfileDialog: React.FC<DeployProfileDialogProps> = ({
               </div>
             )}
           </div>
+          
+          {/* Temporary installation option */}
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="temporary" 
+                checked={isTemporary}
+                onCheckedChange={(checked) => setIsTemporary(checked === true)}
+              />
+              <label 
+                htmlFor="temporary"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Temporary installation
+              </label>
+            </div>
+            
+            {isTemporary && (
+              <div className="pl-6 space-y-2">
+                <Label htmlFor="duration" className="text-sm">Duration (minutes)</Label>
+                <Input
+                  id="duration"
+                  type="number"
+                  min="1"
+                  max="1440"
+                  value={temporaryDuration}
+                  onChange={(e) => setTemporaryDuration(parseInt(e.target.value) || 30)}
+                  className="max-w-[150px]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Profile will be automatically removed after the specified duration.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
         
         <DialogFooter>
@@ -361,12 +403,12 @@ const DeployProfileDialog: React.FC<DeployProfileDialogProps> = ({
             {pushProfile.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Deploying...
+                {isTemporary ? 'Scheduling...' : 'Deploying...'}
               </>
             ) : (
               <>
                 <ArrowRight className="mr-2 h-4 w-4" />
-                Deploy Profile
+                {isTemporary ? 'Schedule Temporary Install' : 'Deploy Profile'}
               </>
             )}
           </Button>

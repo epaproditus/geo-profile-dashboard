@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { simplemdmApi, SimpleMDMDevice, SimpleMDMListResponse, SimpleMDMApp, SimpleMDMResponse } from '../lib/api/simplemdm';
+import { simplemdmApi, SimpleMDMDevice, SimpleMDMListResponse, SimpleMDMApp, SimpleMDMResponse, SimpleMDMProfile } from '../lib/api/simplemdm';
 import { useToast } from "@/hooks/use-toast";
+import { useSupabase } from "@/lib/supabase";
 
 // Hook to fetch all devices
 export const useDevices = (params?: { limit?: number; starting_after?: string; direction?: 'asc' | 'desc' }) => {
@@ -170,23 +171,104 @@ export const useAllProfiles = () => {
 export const usePushProfileToDevice = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { supabase } = useSupabase();
   
   return useMutation({
-    mutationFn: ({ profileId, deviceId }: { profileId: number | string; deviceId: number | string }) => 
-      simplemdmApi.pushProfileToDevice(profileId, deviceId),
-    onSuccess: (_data, { profileId, deviceId }) => {
+    mutationFn: async ({ 
+      profileId, 
+      deviceId, 
+      isTemporary = false, 
+      temporaryDuration = 30 
+    }: { 
+      profileId: number | string; 
+      deviceId: number | string;
+      isTemporary?: boolean;
+      temporaryDuration?: number 
+    }) => {
+      try {
+        // Current timestamp
+        const now = new Date();
+        
+        // Scheduled time for 1 minute from now
+        const scheduledTime = new Date(now.getTime() + 60000); // 1 minute in milliseconds
+        
+        // 1. Create a schedule for installing the profile
+        const { data: installSchedule, error: installError } = await supabase
+          .from('schedules')
+          .insert({
+            profile_id: profileId,
+            action_type: 'push_profile',
+            device_id: deviceId,
+            start_time: scheduledTime.toISOString(),
+            schedule_type: 'one_time',
+            enabled: true,
+            created_by: 'ui',
+            created_at: now.toISOString(),
+            ui_initiated: true,
+            last_executed_at: null
+          })
+          .select()
+          .single();
+          
+        if (installError) {
+          throw new Error(`Failed to create install schedule: ${installError.message}`);
+        }
+        
+        // 2. If this is a temporary profile, schedule its removal
+        if (isTemporary && temporaryDuration > 0) {
+          // Calculate removal time
+          const removalTime = new Date(now.getTime() + (temporaryDuration * 60000));
+          
+          const { error: removalError } = await supabase
+            .from('schedules')
+            .insert({
+              profile_id: profileId,
+              action_type: 'remove_profile',
+              device_id: deviceId,
+              start_time: removalTime.toISOString(),
+              schedule_type: 'one_time',
+              enabled: true,
+              created_by: 'ui',
+              created_at: now.toISOString(),
+              parent_schedule_id: installSchedule.id,
+              ui_initiated: true,
+              last_executed_at: null
+            });
+            
+          if (removalError) {
+            throw new Error(`Failed to create removal schedule: ${removalError.message}`);
+          }
+        }
+        
+        return { success: true };
+      } catch (error) {
+        console.error("Error scheduling profile push:", error);
+        throw error;
+      }
+    },
+    onSuccess: (_data, { profileId, deviceId, isTemporary, temporaryDuration }) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['device', deviceId] });
       
-      toast({
-        title: "Profile Installation Requested",
-        description: "Profile has been pushed to the device. This may take some time to apply.",
-      });
+      // Also invalidate schedules query if viewing the Schedules page
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+      
+      if (isTemporary) {
+        toast({
+          title: "Temporary Profile Scheduled",
+          description: `Profile will be installed shortly and automatically removed after ${temporaryDuration} minutes.`,
+        });
+      } else {
+        toast({
+          title: "Profile Installation Scheduled",
+          description: "Profile will be installed on the device shortly.",
+        });
+      }
     },
     onError: (error: any) => {
       toast({
         title: "Profile Installation Failed",
-        description: error.message || "Failed to push profile to device.",
+        description: error.message || "Failed to schedule profile installation.",
         variant: "destructive",
       });
     },
