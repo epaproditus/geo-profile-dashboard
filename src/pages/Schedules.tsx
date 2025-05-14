@@ -166,6 +166,49 @@ const Schedules = () => {
       alert("Failed to update schedule status. Please try again.");
     }
   };
+  
+  // Reset last_executed_at for recurring schedules
+  const resetRecurringSchedule = async (id) => {
+    try {
+      // Check if user is admin before proceeding
+      const isAdmin = await isCurrentUserAdmin();
+      if (!isAdmin) {
+        alert("Only administrators can reset schedules.");
+        return;
+      }
+      
+      // Find the schedule to get its details
+      const scheduleToReset = schedules.find(s => s.id === id);
+      if (!scheduleToReset) {
+        alert("Schedule not found.");
+        return;
+      }
+      
+      if (scheduleToReset.schedule_type !== "recurring") {
+        alert("Only recurring schedules can be reset.");
+        return;
+      }
+      
+      // Update the schedule
+      const { supabase } = await import('@/lib/supabase');
+      const { error } = await supabase
+        .from('schedules')
+        .update({ 
+          last_executed_at: null
+        })
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      alert("Schedule has been reset successfully and will run at the next scheduled time.");
+      
+      // Refresh data after update
+      fetchSchedules();
+    } catch (err) {
+      console.error("Error resetting schedule:", err);
+      alert("Failed to reset schedule. Please try again.");
+    }
+  };
 
   return (
     <AuthCheck>
@@ -325,23 +368,36 @@ const Schedules = () => {
                   </CardContent>
                   
                   <CardFooter className="pt-2 flex justify-between">
-                    <AdminActionButton 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={() => handleToggleStatus(schedule.id, schedule.enabled)}
-                    >
-                      {schedule.enabled ? (
-                        <>
-                          <XCircle className="h-4 w-4 mr-1" />
-                          Disable
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          Enable
-                        </>
+                    <div className="flex space-x-1">
+                      <AdminActionButton 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleToggleStatus(schedule.id, schedule.enabled)}
+                      >
+                        {schedule.enabled ? (
+                          <>
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Disable
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            Enable
+                          </>
+                        )}
+                      </AdminActionButton>
+                      
+                      {schedule.schedule_type === "recurring" && schedule.last_executed_at && (
+                        <AdminActionButton 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => resetRecurringSchedule(schedule.id)}
+                        >
+                          <Clock className="h-4 w-4 mr-1" />
+                          Reset
+                        </AdminActionButton>
                       )}
-                    </AdminActionButton>
+                    </div>
                     
                     <div className="space-x-1">
                       <AdminActionButton 

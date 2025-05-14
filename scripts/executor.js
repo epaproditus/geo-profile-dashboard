@@ -536,16 +536,30 @@ async function executeSchedules() {
         // Execute the appropriate action based on schedule type
         const actionResult = await executeDeviceAction(schedule);
         
-        // Update execution time in the database
-        // Note: Only updating last_executed_at as other columns don't exist yet
+        // For recurring schedules, calculate the next execution time
+        let updateData = { last_executed_at: now.toISOString() };
+        
+        if (schedule.schedule_type === 'recurring' && schedule.recurrence_pattern) {
+          log(`Handling recurring schedule ${schedule.id} with pattern: ${schedule.recurrence_pattern}`);
+          
+          // Calculate next execution time based on recurrence pattern
+          const nextTime = calculateNextExecutionTime(
+            new Date(schedule.start_time), 
+            schedule.recurrence_pattern,
+            schedule.recurrence_days
+          );
+          
+          if (nextTime) {
+            updateData.start_time = nextTime.toISOString();
+            updateData.last_executed_at = null; // Reset so it can execute again
+            log(`Calculated next execution time for schedule ${schedule.id}: ${nextTime.toISOString()}`);
+          }
+        }
+        
+        // Update execution info in the database
         const { error: updateError } = await supabase
           .from('schedules')
-          .update({ 
-            last_executed_at: now.toISOString()
-            // Status and result columns commented out until they are added to the schema
-            // last_execution_status: actionResult.success ? 'success' : 'failed',
-            // last_execution_result: JSON.stringify(actionResult)
-          })
+          .update(updateData)
           .eq('id', schedule.id);
         
         if (updateError) {
@@ -561,17 +575,31 @@ async function executeSchedules() {
           details: actionResult
         };
       } catch (scheduleError) {
-        log(`Error executing schedule ${schedule.id}: ${scheduleError.message}`);          // Try to update the schedule with error information
-          // Note: Only updating last_executed_at as other columns don't exist yet
+        log(`Error executing schedule ${schedule.id}: ${scheduleError.message}`);
+          
+          // Try to update the schedule with error information
+          // Handle recurring schedules specially
+          let updateData = { last_executed_at: now.toISOString() };
+          
+          if (schedule.schedule_type === 'recurring' && schedule.recurrence_pattern) {
+            // Even on error, calculate the next execution time
+            const nextTime = calculateNextExecutionTime(
+              new Date(schedule.start_time), 
+              schedule.recurrence_pattern,
+              schedule.recurrence_days
+            );
+            
+            if (nextTime) {
+              updateData.start_time = nextTime.toISOString();
+              updateData.last_executed_at = null; // Reset so it can execute again
+              log(`Set next execution time for failed schedule ${schedule.id}: ${nextTime.toISOString()}`);
+            }
+          }
+          
           try {
             await supabase
               .from('schedules')
-              .update({ 
-                last_executed_at: now.toISOString()
-                // Status and result columns commented out until they are added to the schema
-                // last_execution_status: 'error',
-                // last_execution_result: JSON.stringify({ error: scheduleError.message })
-              })
+              .update(updateData)
               .eq('id', schedule.id);
         } catch (dbError) {
           log(`Failed to update schedule with error status: ${dbError.message}`);
@@ -597,6 +625,69 @@ async function executeSchedules() {
     log(`Schedule execution error: ${error.message}`);
     return { error: 'Schedule execution failed', details: error.message };
   }
+}
+
+// Calculate next execution time based on recurrence pattern
+function calculateNextExecutionTime(currentTime, pattern, recurrenceDays) {
+  // If no pattern provided, can't calculate
+  if (!pattern) return null;
+  
+  // Create a new date to avoid modifying the input
+  const nextTime = new Date(currentTime);
+  
+  // Handle different recurrence patterns
+  switch (pattern) {
+    case 'daily':
+      // Add one day
+      nextTime.setDate(nextTime.getDate() + 1);
+      break;
+    
+    case 'weekly':
+      // Add one week
+      nextTime.setDate(nextTime.getDate() + 7);
+      break;
+    
+    case 'monthly':
+      // Add one month, keeping the same day of the month
+      nextTime.setMonth(nextTime.getMonth() + 1);
+      break;
+    
+    case 'weekdays':
+      // If array of days is provided, use that to find the next occurrence
+      if (Array.isArray(recurrenceDays) && recurrenceDays.length > 0) {
+        // Days are stored as integers (0-6, where 0 is Sunday)
+        const today = nextTime.getDay();
+        let daysUntilNext = 7;
+        
+        // Find the next day in the sequence
+        for (const day of recurrenceDays) {
+          const dayNum = parseInt(day, 10);
+          if (isNaN(dayNum)) continue;
+          
+          // Calculate days until next occurrence
+          let daysToAdd = dayNum - today;
+          if (daysToAdd <= 0) daysToAdd += 7; // Wrap around to next week
+          
+          // Keep the smallest positive number of days
+          if (daysToAdd < daysUntilNext) {
+            daysUntilNext = daysToAdd;
+          }
+        }
+        
+        // Add the calculated days
+        nextTime.setDate(nextTime.getDate() + daysUntilNext);
+      } else {
+        // Default to next day if no days specified
+        nextTime.setDate(nextTime.getDate() + 1);
+      }
+      break;
+    
+    default:
+      // Unknown pattern, no change
+      return null;
+  }
+  
+  return nextTime;
 }
 
 // Execute the function and log results
