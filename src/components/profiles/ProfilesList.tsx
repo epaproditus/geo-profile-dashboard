@@ -21,13 +21,15 @@ import {
   DialogClose
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Shield, ArrowRight, Server, Clock, X, MapPin, Settings } from 'lucide-react';
+import { Loader2, Shield, ArrowRight, Server, Clock, X, MapPin, Settings, Lock, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useNonAdminInstallableProfiles, useToggleNonAdminInstallable } from '@/hooks/use-non-admin-installable-profiles';
+import { useIsAdmin } from '@/hooks/use-auth';
 
 // Mock geofence data - replace with real API call when ready
 const mockGeofences = [
@@ -187,6 +189,13 @@ interface ProfileCardProps {
 }
 
 const ProfileCard: React.FC<ProfileCardProps> = ({ profile, onDeploy, onManageLocations }) => {
+  const { isAdmin } = useIsAdmin();
+  const { data: nonAdminInstallableProfiles, isLoading: isLoadingPermissions } = useNonAdminInstallableProfiles();
+  const toggleNonAdminInstallable = useToggleNonAdminInstallable();
+  
+  // Check if this profile is installable by non-admins
+  const isNonAdminInstallable = nonAdminInstallableProfiles?.includes(profile.id) || false;
+  
   const formatDate = (dateString: string) => {
     try {
       return format(new Date(dateString), 'MMM d, yyyy');
@@ -244,6 +253,43 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ profile, onDeploy, onManageLo
           <p className="text-sm text-muted-foreground line-clamp-2">
             {profile.attributes.description}
           </p>
+        )}
+        
+        {/* Admin toggle for non-admin installation */}
+        {isAdmin && (
+          <div className="mt-3 border-t pt-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Non-admin installation</span>
+              </div>
+              <Switch
+                checked={isNonAdminInstallable}
+                disabled={isLoadingPermissions}
+                onCheckedChange={(checked) => {
+                  toggleNonAdminInstallable.mutate({
+                    profileId: profile.id,
+                    isInstallable: checked
+                  });
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {isNonAdminInstallable 
+                ? "Non-admin users can install this profile" 
+                : "Only administrators can install this profile"}
+            </p>
+          </div>
+        )}
+        
+        {/* Display non-admin installable badge for all users */}
+        {isNonAdminInstallable && (
+          <div className="mt-2">
+            <Badge variant="outline" className="text-xs border-blue-400 text-blue-500">
+              <Users className="h-3 w-3 mr-1" />
+              Non-admin installable
+            </Badge>
+          </div>
         )}
         
         {/* Display associated locations */}

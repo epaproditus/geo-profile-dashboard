@@ -47,21 +47,44 @@ export default async function proxyHandler(req, res) {
       // Check if this is a profile push operation (POST to /profiles/{id}/devices/{id})
       const isProfilePush = req.method === 'POST' && /^profiles\/\d+\/devices\/\d+$/.test(urlPath)
       
+      // Check if user is admin
+      const { data: isAdmin, error: adminCheckError } = await supabaseAdmin.rpc('is_admin', {
+        user_id: user.id
+      })
+      
+      if (adminCheckError) {
+        console.error('Error checking admin status:', adminCheckError)
+        return res.status(500).json({ error: 'Server error', message: 'Failed to verify permissions' })
+      }
+      
+      // If this is a profile push by a non-admin user, check if the profile is allowed for non-admin installation
+      if (isProfilePush && !isAdmin) {
+        // Extract the profile ID from the path - format is "profiles/{profile_id}/devices/{device_id}"
+        const matches = urlPath.match(/^profiles\/(\d+)\/devices\/\d+$/)
+        if (matches && matches[1]) {
+          const profileId = parseInt(matches[1], 10)
+          
+          // Check if this profile is allowed for non-admin installation
+          const { data: isAllowed, error: allowedCheckError } = await supabaseAdmin.rpc('is_profile_non_admin_installable', {
+            profile_id_param: profileId
+          })
+          
+          if (allowedCheckError) {
+            console.error('Error checking if profile is installable by non-admin:', allowedCheckError)
+            return res.status(500).json({ error: 'Server error', message: 'Failed to verify profile installation permissions' })
+          }
+          
+          if (!isAllowed) {
+            return res.status(403).json({ 
+              error: 'Forbidden', 
+              message: 'You do not have permission to install this profile. Please contact an administrator.' 
+            })
+          }
+        }
+      }
       // If this is not a profile push, check for admin privileges
-      if (!isProfilePush) {
-        // Check if user is admin
-        const { data: isAdmin, error: adminCheckError } = await supabaseAdmin.rpc('is_admin', {
-          user_id: user.id
-        })
-        
-        if (adminCheckError) {
-          console.error('Error checking admin status:', adminCheckError)
-          return res.status(500).json({ error: 'Server error', message: 'Failed to verify permissions' })
-        }
-        
-        if (!isAdmin) {
-          return res.status(403).json({ error: 'Forbidden', message: 'Admin privileges required' })
-        }
+      else if (!isProfilePush && !isAdmin) {
+        return res.status(403).json({ error: 'Forbidden', message: 'Admin privileges required' })
       }
     }
     
