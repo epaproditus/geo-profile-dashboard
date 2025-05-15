@@ -23,40 +23,44 @@ async function sendNtfyNotification({
   actions = []
 }) {
   const ntfyServer = process.env.NTFY_SERVER || NTFY_DEFAULT_SERVER;
+  const ntfyTopic = process.env.NTFY_TOPIC || topic;
   
-  console.log(`Sending notification to ${ntfyServer}/${topic}`);
+  console.log(`Sending notification to ${ntfyServer}/${ntfyTopic}`);
   console.log(`Title: ${title}`);
   console.log(`Message: ${message}`);
   console.log(`Tags: ${tags.join(',')}`);
   
-  const headers = {
-    'Content-Type': 'application/json'
-  };
-  
-  // Add optional headers
-  if (title) headers['Title'] = title;
-  if (priority) headers['Priority'] = priority.toString();
-  if (tags.length) headers['Tags'] = tags.join(',');
-  if (click) headers['Click'] = click;
-  
-  const body = {
-    topic,
-    message,
-    ...(actions.length ? { actions } : {})
-  };
-  
-  console.log(`Request body: ${JSON.stringify(body)}`);
-  console.log(`Request headers: ${JSON.stringify(headers)}`);
-  
   try {
+    // Use text/plain content type and put everything in headers
+    // This matches the format used in the test-ntfy.sh script
+    const headers = {
+      'Content-Type': 'text/plain',
+      'Title': title,
+      'Priority': priority.toString()
+    };
+    
+    if (tags && tags.length > 0) {
+      headers['Tags'] = tags.join(',');
+    }
+    
+    if (click) {
+      headers['Click'] = click;
+    }
+    
+    if (actions && actions.length > 0) {
+      headers['Actions'] = JSON.stringify(actions);
+    }
+    
+    console.log(`Request headers: ${JSON.stringify(headers)}`);
+    
     // Make sure we have the correct URL format
-    const url = `${ntfyServer}/${topic}`;
+    const url = `${ntfyServer}/${ntfyTopic}`;
     console.log(`Full notification URL: ${url}`);
     
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: message // Send message as plain text body
     });
 
     if (!response.ok) {
@@ -71,8 +75,9 @@ async function sendNtfyNotification({
     return response;
   } catch (error) {
     console.error('Error sending ntfy notification:', error);
-    throw error;
+    return null; // Don't throw so it doesn't crash executor
   }
+}
 }
 
 /**

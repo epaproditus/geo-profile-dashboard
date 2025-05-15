@@ -4,20 +4,32 @@ import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Determine the current directory 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables first
 dotenv.config();
 
-// Add notification import with try/catch for better error handling
+// Debug environment variables
+console.log('Checking ntfy environment variables:');
+console.log(`NTFY_SERVER: ${process.env.NTFY_SERVER || '(using default)'}`);
+console.log(`NTFY_TOPIC: ${process.env.NTFY_TOPIC || '(using default)'}`);
+
+// Import notification functions
 let notifyProfileInstallation, notifyProfileRemoval;
+
 try {
-  // Try dynamic import for better compatibility
-  const notificationModule = await import('./notifications.js');
-  notifyProfileInstallation = notificationModule.notifyProfileInstallation;
-  notifyProfileRemoval = notificationModule.notifyProfileRemoval;
-  console.log("Successfully imported notification functions");
+  // Import notifications.js from the same directory as executor.js
+  const notificationsModule = await import(path.join(__dirname, 'notifications.js'));
+  notifyProfileInstallation = notificationsModule.notifyProfileInstallation;
+  notifyProfileRemoval = notificationsModule.notifyProfileRemoval;
+  console.log('Successfully imported notification functions');
 } catch (error) {
-  console.error("Error importing notification functions:", error);
+  console.error('Error importing notification functions:', error);
   // Provide fallback implementations that just log
   notifyProfileInstallation = ({ profileName, deviceName }) => {
     console.log(`[NOTIFICATION FALLBACK] Profile installed: ${profileName} on ${deviceName}`);
