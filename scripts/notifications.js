@@ -114,7 +114,7 @@ async function notifyProfileRemoval({
   }
 }
 
-module.exports = {
+export {
   notifyProfileInstallation,
   notifyProfileRemoval
 };
