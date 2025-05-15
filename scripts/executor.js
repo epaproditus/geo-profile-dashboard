@@ -4,10 +4,30 @@ import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { notifyProfileInstallation, notifyProfileRemoval } from './notifications.js';
 
-// Load environment variables
+// Load environment variables first
 dotenv.config();
+
+// Add notification import with try/catch for better error handling
+let notifyProfileInstallation, notifyProfileRemoval;
+try {
+  // Try dynamic import for better compatibility
+  const notificationModule = await import('./notifications.js');
+  notifyProfileInstallation = notificationModule.notifyProfileInstallation;
+  notifyProfileRemoval = notificationModule.notifyProfileRemoval;
+  console.log("Successfully imported notification functions");
+} catch (error) {
+  console.error("Error importing notification functions:", error);
+  // Provide fallback implementations that just log
+  notifyProfileInstallation = ({ profileName, deviceName }) => {
+    console.log(`[NOTIFICATION FALLBACK] Profile installed: ${profileName} on ${deviceName}`);
+    return null;
+  };
+  notifyProfileRemoval = ({ profileName, deviceName }) => {
+    console.log(`[NOTIFICATION FALLBACK] Profile removed: ${profileName} from ${deviceName}`);
+    return null;
+  };
+}
 
 // Function to log messages to file and console
 function log(message) {
@@ -117,6 +137,8 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
             
             // If notifications are enabled in the metadata, send one
             if (metadata.notify) {
+              log(`Notification is enabled for this profile installation. Metadata: ${JSON.stringify(metadata)}`);
+              
               // Get profile and device names from metadata or fetch them
               let profileName = metadata.profile_name;
               let deviceName = metadata.device_name;
@@ -126,6 +148,7 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
                 try {
                   const profileData = await callSimpleMDM(`profiles/${profileId}`);
                   profileName = profileData.data.attributes.name || `Profile ${profileId}`;
+                  log(`Fetched profile name: ${profileName}`);
                 } catch (e) {
                   profileName = `Profile ${profileId}`;
                   log(`Could not fetch profile name: ${e.message}`);
@@ -136,6 +159,7 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
                 try {
                   const deviceData = await callSimpleMDM(`devices/${deviceId}`);
                   deviceName = deviceData.data.attributes.name || `Device ${deviceId}`;
+                  log(`Fetched device name: ${deviceName}`);
                 } catch (e) {
                   deviceName = `Device ${deviceId}`;
                   log(`Could not fetch device name: ${e.message}`);
@@ -143,17 +167,27 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
               }
               
               // Send the notification
-              await notifyProfileInstallation({
-                profileId,
-                profileName,
-                deviceId,
-                deviceName,
-                isTemporary: metadata.is_temporary || false,
-                temporaryDuration: metadata.temporary_duration || 0
-              });
+              log(`Attempting to send notification for profile ${profileName} to ${deviceName}`);
+              try {
+                const result = await notifyProfileInstallation({
+                  profileId,
+                  profileName,
+                  deviceId,
+                  deviceName,
+                  isTemporary: metadata.is_temporary || false,
+                  temporaryDuration: metadata.temporary_duration || 0
+                });
+                log(`Notification sent result: ${result ? 'Success' : 'Failed'}`);
+              } catch (notifyError) {
+                log(`Error sending notification: ${notifyError.message}`);
+              }
               
-              log(`Sent notification for profile installation: ${profileName} to ${deviceName}`);
+              log(`Completed notification process for profile installation: ${profileName} to ${deviceName}`);
+            } else {
+              log('Notifications not enabled for this profile installation');
             }
+          } else {
+            log(`Could not find schedule metadata for notifications. Error: ${scheduleError}`);
           }
         }
       }

@@ -5,6 +5,11 @@ import fetch from 'node-fetch';
 const NTFY_DEFAULT_TOPIC = 'geo-profile-dashboard';
 const NTFY_DEFAULT_SERVER = 'https://ntfy.sh';
 
+// Check environment variables for ntfy configuration
+console.log("Environment variables for ntfy:");
+console.log(`NTFY_SERVER: ${process.env.NTFY_SERVER || '(using default)'}`);
+console.log(`NTFY_TOPIC: ${process.env.NTFY_TOPIC || '(using default)'}`);
+
 /**
  * Send a notification to ntfy.sh
  */
@@ -18,6 +23,11 @@ async function sendNtfyNotification({
   actions = []
 }) {
   const ntfyServer = process.env.NTFY_SERVER || NTFY_DEFAULT_SERVER;
+  
+  console.log(`Sending notification to ${ntfyServer}/${topic}`);
+  console.log(`Title: ${title}`);
+  console.log(`Message: ${message}`);
+  console.log(`Tags: ${tags.join(',')}`);
   
   const headers = {
     'Content-Type': 'application/json'
@@ -35,8 +45,15 @@ async function sendNtfyNotification({
     ...(actions.length ? { actions } : {})
   };
   
+  console.log(`Request body: ${JSON.stringify(body)}`);
+  console.log(`Request headers: ${JSON.stringify(headers)}`);
+  
   try {
-    const response = await fetch(`${ntfyServer}`, {
+    // Make sure we have the correct URL format
+    const url = `${ntfyServer}/${topic}`;
+    console.log(`Full notification URL: ${url}`);
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
@@ -44,8 +61,13 @@ async function sendNtfyNotification({
 
     if (!response.ok) {
       console.error(`Error sending ntfy notification: ${response.status} ${response.statusText}`);
+      const responseText = await response.text();
+      console.error(`Response body: ${responseText}`);
+      return null;
     }
     
+    const responseData = await response.text();
+    console.log(`Notification sent successfully. Response: ${responseData}`);
     return response;
   } catch (error) {
     console.error('Error sending ntfy notification:', error);
@@ -114,7 +136,16 @@ async function notifyProfileRemoval({
   }
 }
 
+// Use ESM export syntax
 export {
   notifyProfileInstallation,
   notifyProfileRemoval
 };
+
+// Also provide CommonJS exports for compatibility
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    notifyProfileInstallation,
+    notifyProfileRemoval
+  };
+}
