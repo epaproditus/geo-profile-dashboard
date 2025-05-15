@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import { notifyProfileInstallation, notifyProfileRemoval } from './notifications.js';
 
 // Load environment variables
 dotenv.config();
@@ -101,6 +102,60 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
           request_method: 'POST',
           success: true
         });
+        
+        // Check if we should send a notification
+        if (scheduleId) {
+          // Get the schedule to check for notification preferences and metadata
+          const { data: schedule, error: scheduleError } = await supabaseClient
+            .from('schedules')
+            .select('*')
+            .eq('id', scheduleId)
+            .single();
+            
+          if (!scheduleError && schedule && schedule.metadata) {
+            const metadata = schedule.metadata;
+            
+            // If notifications are enabled in the metadata, send one
+            if (metadata.notify) {
+              // Get profile and device names from metadata or fetch them
+              let profileName = metadata.profile_name;
+              let deviceName = metadata.device_name;
+              
+              // If names are not in metadata, try to fetch them
+              if (!profileName) {
+                try {
+                  const profileData = await callSimpleMDM(`profiles/${profileId}`);
+                  profileName = profileData.data.attributes.name || `Profile ${profileId}`;
+                } catch (e) {
+                  profileName = `Profile ${profileId}`;
+                  log(`Could not fetch profile name: ${e.message}`);
+                }
+              }
+              
+              if (!deviceName) {
+                try {
+                  const deviceData = await callSimpleMDM(`devices/${deviceId}`);
+                  deviceName = deviceData.data.attributes.name || `Device ${deviceId}`;
+                } catch (e) {
+                  deviceName = `Device ${deviceId}`;
+                  log(`Could not fetch device name: ${e.message}`);
+                }
+              }
+              
+              // Send the notification
+              await notifyProfileInstallation({
+                profileId,
+                profileName,
+                deviceId,
+                deviceName,
+                isTemporary: metadata.is_temporary || false,
+                temporaryDuration: metadata.temporary_duration || 0
+              });
+              
+              log(`Sent notification for profile installation: ${profileName} to ${deviceName}`);
+            }
+          }
+        }
       }
     } catch (logError) {
       // Don't fail if logging fails
@@ -152,6 +207,66 @@ async function removeProfileFromDevice(profileId, deviceId, scheduleId, supabase
           request_method: 'DELETE',
           success: true
         });
+        
+        // Check if we should send a notification
+        if (scheduleId) {
+          // Get the schedule to check for notification preferences and metadata
+          const { data: schedule, error: scheduleError } = await supabaseClient
+            .from('schedules')
+            .select('*, parent_schedule:parent_schedule_id(*)')
+            .eq('id', scheduleId)
+            .single();
+            
+          if (!scheduleError && schedule) {
+            const metadata = schedule.metadata || {};
+            let parentMetadata = {};
+            
+            // If this is a scheduled removal of a temporary profile, the parent schedule may have the metadata
+            if (schedule.parent_schedule_id && schedule.parent_schedule) {
+              parentMetadata = schedule.parent_schedule.metadata || {};
+            }
+            
+            // If notifications are enabled in either this schedule or the parent schedule
+            if (metadata.notify || parentMetadata.notify) {
+              // Get profile and device names from metadata or fetch them
+              let profileName = metadata.profile_name || parentMetadata.profile_name;
+              let deviceName = metadata.device_name || parentMetadata.device_name;
+              let wasTemporary = metadata.was_temporary_installation || parentMetadata.is_temporary || false;
+              
+              // If names are not in metadata, try to fetch them
+              if (!profileName) {
+                try {
+                  const profileData = await callSimpleMDM(`profiles/${profileId}`);
+                  profileName = profileData.data.attributes.name || `Profile ${profileId}`;
+                } catch (e) {
+                  profileName = `Profile ${profileId}`;
+                  log(`Could not fetch profile name: ${e.message}`);
+                }
+              }
+              
+              if (!deviceName) {
+                try {
+                  const deviceData = await callSimpleMDM(`devices/${deviceId}`);
+                  deviceName = deviceData.data.attributes.name || `Device ${deviceId}`;
+                } catch (e) {
+                  deviceName = `Device ${deviceId}`;
+                  log(`Could not fetch device name: ${e.message}`);
+                }
+              }
+              
+              // Send the notification
+              await notifyProfileRemoval({
+                profileId,
+                profileName,
+                deviceId,
+                deviceName,
+                wasTemporary
+              });
+              
+              log(`Sent notification for profile removal: ${profileName} from ${deviceName}`);
+            }
+          }
+        }
       }
     } catch (logError) {
       // Don't fail if logging fails
@@ -184,6 +299,69 @@ async function removeProfileFromDevice(profileId, deviceId, scheduleId, supabase
         }
       } catch (logError) {
         log(`Note: Failed to log API call to database: ${logError.message}`);
+      }
+      
+      // Send notification for removal even if it was already removed
+      if (supabaseClient && scheduleId) {
+        try {
+          // Get the schedule to check for notification preferences
+          const { data: schedule, error: scheduleError } = await supabaseClient
+            .from('schedules')
+            .select('*, parent_schedule:parent_schedule_id(*)')
+            .eq('id', scheduleId)
+            .single();
+            
+          if (!scheduleError && schedule) {
+            const metadata = schedule.metadata || {};
+            let parentMetadata = {};
+            
+            // If this is a scheduled removal of a temporary profile
+            if (schedule.parent_schedule_id && schedule.parent_schedule) {
+              parentMetadata = schedule.parent_schedule.metadata || {};
+            }
+            
+            // If notifications are enabled
+            if (metadata.notify || parentMetadata.notify) {
+              let profileName = metadata.profile_name || parentMetadata.profile_name;
+              let deviceName = metadata.device_name || parentMetadata.device_name;
+              let wasTemporary = metadata.was_temporary_installation || parentMetadata.is_temporary || false;
+              
+              // If names are not in metadata, try to fetch them
+              if (!profileName) {
+                try {
+                  const profileData = await callSimpleMDM(`profiles/${profileId}`);
+                  profileName = profileData.data.attributes.name || `Profile ${profileId}`;
+                } catch (e) {
+                  profileName = `Profile ${profileId}`;
+                  log(`Could not fetch profile name: ${e.message}`);
+                }
+              }
+              
+              if (!deviceName) {
+                try {
+                  const deviceData = await callSimpleMDM(`devices/${deviceId}`);
+                  deviceName = deviceData.data.attributes.name || `Device ${deviceId}`;
+                } catch (e) {
+                  deviceName = `Device ${deviceId}`;
+                  log(`Could not fetch device name: ${e.message}`);
+                }
+              }
+              
+              // Send notification with a note that the profile was already removed
+              await notifyProfileRemoval({
+                profileId,
+                profileName,
+                deviceId,
+                deviceName,
+                wasTemporary
+              });
+              
+              log(`Sent notification for profile removal (already removed): ${profileName} from ${deviceName}`);
+            }
+          }
+        } catch (notifyError) {
+          log(`Failed to send notification: ${notifyError.message}`);
+        }
       }
       
       // Return success since the profile is already not on the device

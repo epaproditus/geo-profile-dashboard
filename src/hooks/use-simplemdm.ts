@@ -168,6 +168,8 @@ export const useAllProfiles = () => {
   });
 };
 
+import { notifyProfileInstallation } from '@/lib/ntfy';
+
 export const usePushProfileToDevice = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -178,12 +180,18 @@ export const usePushProfileToDevice = () => {
       profileId, 
       deviceId, 
       isTemporary = false, 
-      temporaryDuration = 30 
+      temporaryDuration = 30,
+      enableNotifications = true,
+      profileName = '',
+      deviceName = ''
     }: { 
       profileId: number | string; 
       deviceId: number | string;
       isTemporary?: boolean;
-      temporaryDuration?: number 
+      temporaryDuration?: number;
+      enableNotifications?: boolean;
+      profileName?: string;
+      deviceName?: string;
     }) => {
       try {
         // Current timestamp
@@ -205,7 +213,14 @@ export const usePushProfileToDevice = () => {
             created_by: 'ui',
             created_at: now.toISOString(),
             ui_initiated: true,
-            last_executed_at: null
+            last_executed_at: null,
+            metadata: {
+              notify: enableNotifications,
+              profile_name: profileName,
+              device_name: deviceName,
+              is_temporary: isTemporary,
+              temporary_duration: isTemporary ? temporaryDuration : 0
+            }
           })
           .select()
           .single();
@@ -232,7 +247,15 @@ export const usePushProfileToDevice = () => {
               created_at: now.toISOString(),
               parent_schedule_id: installSchedule.id,
               ui_initiated: true,
-              last_executed_at: null
+              last_executed_at: null,
+              metadata: {
+                notify: enableNotifications,
+                profile_name: profileName,
+                device_name: deviceName,
+                is_temporary: true,
+                was_temporary_installation: true,
+                original_duration: temporaryDuration
+              }
             });
             
           if (removalError) {
@@ -246,13 +269,14 @@ export const usePushProfileToDevice = () => {
         throw error;
       }
     },
-    onSuccess: (_data, { profileId, deviceId, isTemporary, temporaryDuration }) => {
+    onSuccess: (_data, { profileId, deviceId, isTemporary, temporaryDuration, profileName, deviceName, enableNotifications }) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['device', deviceId] });
       
       // Also invalidate schedules query if viewing the Schedules page
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
       
+      // Show toast notification
       if (isTemporary) {
         toast({
           title: "Temporary Profile Scheduled",
@@ -262,6 +286,23 @@ export const usePushProfileToDevice = () => {
         toast({
           title: "Profile Installation Scheduled",
           description: "Profile will be installed on the device shortly.",
+        });
+      }
+      
+      // Send push notification if enabled
+      if (enableNotifications && profileName && deviceName) {
+        // Send a notification for the profile installation
+        // This is just to give immediate feedback to the user that the process has started
+        // The actual installation notification will be sent by the executor.js script
+        notifyProfileInstallation({
+          profileName,
+          profileId,
+          deviceName,
+          deviceId,
+          isTemporary,
+          temporaryDuration
+        }).catch(error => {
+          console.error('Error sending installation notification:', error);
         });
       }
     },

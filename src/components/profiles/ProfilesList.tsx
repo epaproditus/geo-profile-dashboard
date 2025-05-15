@@ -341,17 +341,29 @@ const DeployProfileDialog: React.FC<DeployProfileDialogProps> = ({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [isTemporary, setIsTemporary] = useState<boolean>(false);
   const [temporaryDuration, setTemporaryDuration] = useState<number>(30);
+  const [enableNotifications, setEnableNotifications] = useState<boolean>(true);
   const { data: devicesData, isLoading: isLoadingDevices } = useDevices({ limit: 100 });
+  const { data: profileData } = useProfile(profileId || '');
   const pushProfile = usePushProfileToDevice();
   
   const handleDeployProfile = () => {
     if (profileId && selectedDeviceId) {
+      // Get profile name
+      const profileName = profileData?.data?.attributes?.name || `Profile ${profileId}`;
+      
+      // Get device name
+      const device = devicesData?.data?.find(d => d.id.toString() === selectedDeviceId);
+      const deviceName = device?.attributes?.name || `Device ${selectedDeviceId}`;
+      
       pushProfile.mutate(
         { 
           profileId, 
           deviceId: selectedDeviceId,
           isTemporary,
-          temporaryDuration
+          temporaryDuration,
+          enableNotifications,
+          profileName,
+          deviceName
         },
         {
           onSuccess: () => {
@@ -432,6 +444,53 @@ const DeployProfileDialog: React.FC<DeployProfileDialogProps> = ({
                 />
                 <p className="text-xs text-muted-foreground">
                   Profile will be automatically removed after the specified duration.
+                </p>
+              </div>
+            )}
+          </div>
+          
+          {/* Notification option */}
+          <div className="space-y-4 pt-2 border-t">
+            <div className="flex items-center space-x-2 pt-2">
+              <Checkbox 
+                id="notifications" 
+                checked={enableNotifications}
+                onCheckedChange={(checked) => setEnableNotifications(checked === true)}
+              />
+              <label 
+                htmlFor="notifications"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Send push notifications
+              </label>
+            </div>
+            
+            {enableNotifications && (
+              <div className="pl-6">
+                <p className="text-xs text-muted-foreground">
+                  You'll receive notifications when the profile is installed and removed.
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="ml-1 px-0 h-auto text-xs"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // Show a guide for subscribing to ntfy
+                      toast({
+                        title: "Push Notification Setup",
+                        description: (
+                          <div className="prose prose-sm dark:prose-invert">
+                            <p>1. Install the ntfy app on your device</p>
+                            <p>2. Subscribe to topic: <code>geo-profile-dashboard</code></p>
+                            <p>3. Server: <code>https://ntfy.sh</code></p>
+                          </div>
+                        ),
+                        duration: 10000,
+                      });
+                    }}
+                  >
+                    Setup guide
+                  </Button>
                 </p>
               </div>
             )}
