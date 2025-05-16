@@ -14,6 +14,10 @@ const __dirname = path.dirname(__filename);
 // Load environment variables first
 dotenv.config();
 
+// Log file settings
+const LOG_FILE = process.env.LOG_FILE || './scheduler.log';
+console.log(`Logs are being written to: ${path.resolve(LOG_FILE)}`);
+
 // Debug environment variables
 console.log('Checking ntfy environment variables:');
 console.log(`NTFY_SERVER: ${process.env.NTFY_SERVER || '(using default)'}`);
@@ -28,8 +32,18 @@ try {
   notifyProfileInstallation = notificationsModule.notifyProfileInstallation;
   notifyProfileRemoval = notificationsModule.notifyProfileRemoval;
   console.log('Successfully imported notification functions');
+  console.log(`Notification function types - installation: ${typeof notifyProfileInstallation}, removal: ${typeof notifyProfileRemoval}`);
+  
+  // Verify the functions
+  if (typeof notifyProfileInstallation !== 'function') {
+    console.error(`WARNING: notifyProfileInstallation is not a function, it's a ${typeof notifyProfileInstallation}`);
+  }
+  if (typeof notifyProfileRemoval !== 'function') {
+    console.error(`WARNING: notifyProfileRemoval is not a function, it's a ${typeof notifyProfileRemoval}`);
+  }
 } catch (error) {
   console.error('Error importing notification functions:', error);
+  console.error('Error stack:', error.stack);
   // Provide fallback implementations that just log
   notifyProfileInstallation = ({ profileName, deviceName, profileId, deviceId, isTemporary, temporaryDuration }) => {
     console.log(`[NOTIFICATION FALLBACK] Profile installed: ${profileName} on ${deviceName}`);
@@ -44,16 +58,25 @@ try {
 // Function to log messages to file and console
 function log(message) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${message}`);
+  const formattedMessage = `[${timestamp}] ${message}`;
+  console.log(formattedMessage);
   
   // Try to log to file, but don't fail if it doesn't work
   try {
     const logFile = process.env.LOG_FILE || './scheduler.log';
-    fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
+    fs.appendFileSync(logFile, `${formattedMessage}\n`);
+    
+    // Debug - output where logs are being written to help find them
+    if (message.includes('debug-log-location')) {
+      console.log(`Logs are being written to: ${path.resolve(logFile)}`);
+    }
   } catch (err) {
     console.error(`Could not write to log file: ${err.message}`);
   }
 }
+
+// Log the path to help find the log file
+log('debug-log-location');
 
 // Function to call SimpleMDM API
 async function callSimpleMDM(endpoint, method = 'GET', data = null) {
@@ -180,14 +203,22 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
             // Send the notification
             log(`Attempting to send notification for profile ${profileName} to ${deviceName}`);
             try {
-              const result = await notifyProfileInstallation({
-                profileId,
-                profileName,
-                deviceId,
-                deviceName,
-                isTemporary: metadata.is_temporary || false,
-                temporaryDuration: metadata.temporary_duration || 0
-              });
+              if (typeof notifyProfileInstallation !== 'function') {
+                log(`ERROR: notifyProfileInstallation is not a function, type: ${typeof notifyProfileInstallation}`);
+              } else {
+                const notificationParams = {
+                  profileId,
+                  profileName,
+                  deviceId,
+                  deviceName,
+                  isTemporary: metadata.is_temporary || false,
+                  temporaryDuration: metadata.temporary_duration || 0
+                };
+                log(`Installation notification params: ${JSON.stringify(notificationParams)}`);
+                
+                const result = await notifyProfileInstallation(notificationParams);
+                log(`Installation notification result: ${result ? 'Success' : 'Failed or null'}`);
+              }
               log(`Notification sent result: ${result ? 'Success' : 'Failed'}`);
             } catch (notifyError) {
               log(`Error sending notification: ${notifyError.message}`);
@@ -297,15 +328,27 @@ async function removeProfileFromDevice(profileId, deviceId, scheduleId, supabase
             
             // Send the notification
             log(`About to call notifyProfileRemoval for ${profileName} on ${deviceName}`);
-            await notifyProfileRemoval({
-              profileId,
-              profileName,
-              deviceId,
-              deviceName,
-              wasTemporary
-            });
-            
-            log(`Sent notification for profile removal: ${profileName} from ${deviceName}`);
+            try {
+              if (typeof notifyProfileRemoval !== 'function') {
+                log(`ERROR: notifyProfileRemoval is not a function, type: ${typeof notifyProfileRemoval}`);
+              } else {
+                const notificationParams = {
+                  profileId,
+                  profileName,
+                  deviceId, 
+                  deviceName,
+                  wasTemporary
+                };
+                log(`Notification params: ${JSON.stringify(notificationParams)}`);
+                
+                const result = await notifyProfileRemoval(notificationParams);
+                log(`Notification result: ${result ? 'Success' : 'Failed or null'}`);
+              }
+              log(`Sent notification for profile removal: ${profileName} from ${deviceName}`);
+            } catch (notifyError) {
+              log(`Error in notifyProfileRemoval: ${notifyError.message}`);
+              log(`Error stack: ${notifyError.stack}`);
+            }
           }
         }
       }
@@ -390,16 +433,25 @@ async function removeProfileFromDevice(profileId, deviceId, scheduleId, supabase
             // Send notification with a note that the profile was already removed
             log(`About to call notifyProfileRemoval for ${profileName} on ${deviceName} (already removed)`);
             try {
-              await notifyProfileRemoval({
-                profileId,
-                profileName,
-                deviceId,
-                deviceName,
-                wasTemporary
-              });
+              if (typeof notifyProfileRemoval !== 'function') {
+                log(`ERROR: notifyProfileRemoval is not a function, type: ${typeof notifyProfileRemoval}`);
+              } else {
+                const notificationParams = {
+                  profileId,
+                  profileName,
+                  deviceId, 
+                  deviceName,
+                  wasTemporary
+                };
+                log(`Notification params: ${JSON.stringify(notificationParams)}`);
+                
+                const result = await notifyProfileRemoval(notificationParams);
+                log(`Notification result: ${result ? 'Success' : 'Failed or null'}`);
+              }
               log(`Sent notification for profile removal (already removed): ${profileName} from ${deviceName}`);
-            } catch (err) {
-              log(`Error sending profile removal notification: ${err.message}`);
+            } catch (notifyError) {
+              log(`Error in notifyProfileRemoval: ${notifyError.message}`);
+              log(`Error stack: ${notifyError.stack}`);
             }
           }
         } catch (notifyError) {
