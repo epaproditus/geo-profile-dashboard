@@ -31,36 +31,39 @@ async function sendNtfyNotification({
   console.log(`Tags: ${tags.join(',')}`);
   
   try {
-    // Use text/plain content type and put everything in headers
-    // This matches the format used in the test-ntfy.sh script
-    const headers = {
-      'Content-Type': 'text/plain',
-      'Title': title,
-      'Priority': priority.toString()
+    // Use application/json content type and put everything in the body instead of headers
+    // This should fix the JSON formatting issues
+    const payload = {
+      topic: ntfyTopic,
+      title: title,
+      message: message,
+      priority: priority
     };
     
     if (tags && tags.length > 0) {
-      headers['Tags'] = tags.join(',');
+      payload.tags = tags;
     }
     
     if (click) {
-      headers['Click'] = click;
+      payload.click = click;
     }
     
     if (actions && actions.length > 0) {
-      headers['Actions'] = JSON.stringify(actions);
+      payload.actions = actions;
     }
     
-    console.log(`Request headers: ${JSON.stringify(headers)}`);
+    console.log(`Request payload: ${JSON.stringify(payload)}`);
     
     // Make sure we have the correct URL format
-    const url = `${ntfyServer}/${ntfyTopic}`;
+    const url = `${ntfyServer}/`;
     console.log(`Full notification URL: ${url}`);
     
     const response = await fetch(url, {
       method: 'POST',
-      headers,
-      body: message // Send message as plain text body
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload) // Send as JSON
     });
 
     if (!response.ok) {
@@ -102,7 +105,8 @@ async function notifyProfileInstallation({
       title,
       message,
       tags: ['phone', 'check'],
-      priority: 3
+      priority: 3,
+      actions: [] // Empty array for no actions
     });
   } catch (error) {
     console.error('Failed to send profile installation notification:', error);
@@ -132,7 +136,8 @@ async function notifyProfileRemoval({
       title,
       message,
       tags: ['phone', 'x'],
-      priority: 3
+      priority: 3,
+      actions: [] // Empty array for no actions
     });
   } catch (error) {
     console.error('Failed to send profile removal notification:', error);
