@@ -22,6 +22,7 @@ async function sendNtfyNotification({
   click,
   actions = []
 }) {
+  console.log(`DEBUG: sendNtfyNotification called with title: ${title}`);
   const ntfyServer = process.env.NTFY_SERVER || NTFY_DEFAULT_SERVER;
   const ntfyTopic = process.env.NTFY_TOPIC || topic;
   
@@ -68,6 +69,7 @@ async function sendNtfyNotification({
 
     if (!response.ok) {
       console.error(`Error sending ntfy notification: ${response.status} ${response.statusText}`);
+      console.error(`Request body: ${JSON.stringify(payload)}`);
       const responseText = await response.text();
       console.error(`Response body: ${responseText}`);
       return null;
@@ -124,6 +126,7 @@ async function notifyProfileRemoval({
   deviceId,
   wasTemporary = false
 }) {
+  console.log(`DEBUG: notifyProfileRemoval called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Removed: ${profileName}`;
     let message = `The profile "${profileName}" has been removed from device "${deviceName}".`;
@@ -141,6 +144,8 @@ async function notifyProfileRemoval({
     });
   } catch (error) {
     console.error('Failed to send profile removal notification:', error);
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
     return null;
   }
 }

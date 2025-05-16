@@ -31,11 +31,11 @@ try {
 } catch (error) {
   console.error('Error importing notification functions:', error);
   // Provide fallback implementations that just log
-  notifyProfileInstallation = ({ profileName, deviceName }) => {
+  notifyProfileInstallation = ({ profileName, deviceName, profileId, deviceId, isTemporary, temporaryDuration }) => {
     console.log(`[NOTIFICATION FALLBACK] Profile installed: ${profileName} on ${deviceName}`);
     return null;
   };
-  notifyProfileRemoval = ({ profileName, deviceName }) => {
+  notifyProfileRemoval = ({ profileName, deviceName, profileId, deviceId, wasTemporary }) => {
     console.log(`[NOTIFICATION FALLBACK] Profile removed: ${profileName} from ${deviceName}`);
     return null;
   };
@@ -296,6 +296,7 @@ async function removeProfileFromDevice(profileId, deviceId, scheduleId, supabase
             }
             
             // Send the notification
+            log(`About to call notifyProfileRemoval for ${profileName} on ${deviceName}`);
             await notifyProfileRemoval({
               profileId,
               profileName,
@@ -387,15 +388,19 @@ async function removeProfileFromDevice(profileId, deviceId, scheduleId, supabase
             }
             
             // Send notification with a note that the profile was already removed
-            await notifyProfileRemoval({
-              profileId,
-              profileName,
-              deviceId,
-              deviceName,
-              wasTemporary
-            });
-            
-            log(`Sent notification for profile removal (already removed): ${profileName} from ${deviceName}`);
+            log(`About to call notifyProfileRemoval for ${profileName} on ${deviceName} (already removed)`);
+            try {
+              await notifyProfileRemoval({
+                profileId,
+                profileName,
+                deviceId,
+                deviceName,
+                wasTemporary
+              });
+              log(`Sent notification for profile removal (already removed): ${profileName} from ${deviceName}`);
+            } catch (err) {
+              log(`Error sending profile removal notification: ${err.message}`);
+            }
           }
         } catch (notifyError) {
           log(`Failed to send notification: ${notifyError.message}`);
