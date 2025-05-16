@@ -37,6 +37,13 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
+### Troubleshooting Documents
+
+- [Schedule Troubleshooting](SCHEDULE_TROUBLESHOOTING.md) - Solutions for schedule execution issues
+- [Reset Recurring Schedules](RESET_RECURRING_SCHEDULES.md) - How to reset recurring schedules
+- [Recurring Schedules Fix](RECURRING_SCHEDULES_FIX.md) - Root cause analysis and permanent fix for recurring schedules
+- [Admin API Troubleshooting](ADMIN_API_TROUBLESHOOTING.md) - Solutions for admin API issues
+
 ## How can I edit this code?
 
 There are several ways of editing your application.

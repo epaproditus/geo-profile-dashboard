@@ -1,6 +1,5 @@
 #!/bin/bash
-# This script uses the update-schedules-direct.js to fix the recurring schedules
-# that aren't running correctly.
+# This script checks the status of the HI and BYE recurring schedules
 
 # Define colors for better readability
 GREEN='\033[0;32m'
@@ -9,7 +8,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 echo -e "${YELLOW}=======================================${NC}"
-echo -e "${YELLOW}  Fixing Recurring Schedules          ${NC}"
+echo -e "${YELLOW}  Checking HI and BYE Schedules        ${NC}"
 echo -e "${YELLOW}=======================================${NC}"
 
 # Determine the script path and base directory
@@ -44,30 +43,23 @@ if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
   exit 1
 fi
 
-echo -e "${GREEN}Running update-schedules-direct.js to fix recurring schedules...${NC}"
-node scripts/update-schedules-direct.js
+echo -e "${GREEN}Running check-hi-bye-schedules.js to diagnose schedule status...${NC}"
+echo
+
+node scripts/check-hi-bye-schedules.js
 
 # Check if the script executed successfully
 if [ $? -eq 0 ]; then
-  echo -e "${GREEN}✓ Recurring schedules have been fixed successfully!${NC}"
-  echo -e "${YELLOW}The following schedules have been reset:${NC}"
-  echo "  - HI (Profile Installation)"
-  echo "  - BYE (Profile Removal)"
-  echo 
-  echo -e "${GREEN}The schedules will run at their usual times tomorrow.${NC}"
+  echo -e "${YELLOW}=======================================${NC}"
+  echo -e "${GREEN}Next steps:${NC}"
+  echo "1. If schedules are not eligible for execution, run the fix script:"
+  echo "   ./fix-hi-bye-schedules.sh"
+  echo "2. To ensure schedules are fixed automatically, set up a daily cron job:"
+  echo "   0 0 * * * $SCRIPT_DIR/fix-hi-bye-schedules.sh >> $SCRIPT_DIR/logs/schedule-fix.log 2>&1"
 else
-  echo -e "${RED}Error: Failed to fix recurring schedules${NC}"
+  echo -e "${RED}Error: Failed to check schedules${NC}"
   echo "Check the error messages above for more details."
   exit 1
 fi
-
-echo -e "${YELLOW}=======================================${NC}"
-echo -e "${GREEN}Next steps:${NC}"
-echo "1. Run './check-schedules.sh' to verify the schedule status"
-echo "2. Set up a daily cron job to automate this fix:"
-echo "   0 0 * * * $SCRIPT_DIR/fix-hi-bye-schedules.sh >> $SCRIPT_DIR/logs/schedule-fix.log 2>&1"
-echo "3. For detailed information about the root cause and fix, see:"
-echo "   $SCRIPT_DIR/RECURRING_SCHEDULES_FIX.md"
-echo -e "${YELLOW}=======================================${NC}"
 
 exit 0

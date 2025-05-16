@@ -833,28 +833,72 @@ async function executeSchedules() {
         if (schedule.schedule_type === 'recurring' && schedule.recurrence_pattern) {
           log(`Handling recurring schedule ${schedule.id} with pattern: ${schedule.recurrence_pattern}`);
           
-          // Calculate next execution time based on recurrence pattern
-          const nextTime = calculateNextExecutionTime(
-            new Date(schedule.start_time), 
-            schedule.recurrence_pattern,
-            schedule.recurrence_days
-          );
-          
-          if (nextTime) {
-            updateData.start_time = nextTime.toISOString();
-            updateData.last_executed_at = null; // Reset so it can execute again
-            log(`Calculated next execution time for schedule ${schedule.id}: ${nextTime.toISOString()}`);
+          try {
+            // Calculate next execution time based on recurrence pattern
+            const nextTime = calculateNextExecutionTime(
+              new Date(schedule.start_time), 
+              schedule.recurrence_pattern,
+              schedule.recurrence_days
+            );
+            
+            if (nextTime) {
+              updateData.start_time = nextTime.toISOString();
+              updateData.last_executed_at = null; // Reset so it can execute again
+              log(`Calculated next execution time for schedule ${schedule.id}: ${nextTime.toISOString()}`);
+            } else {
+              log(`WARNING: calculateNextExecutionTime returned null for schedule ${schedule.id} with pattern: ${schedule.recurrence_pattern}`);
+              
+              // Fallback: just add one day to ensure the schedule continues
+              const tomorrow = new Date();
+              tomorrow.setDate(tomorrow.getDate() + 1);
+              // Keep the same time of day as the original schedule
+              const originalTime = new Date(schedule.start_time);
+              tomorrow.setHours(originalTime.getHours());
+              tomorrow.setMinutes(originalTime.getMinutes());
+              tomorrow.setSeconds(originalTime.getSeconds());
+              
+              updateData.start_time = tomorrow.toISOString();
+              updateData.last_executed_at = null;
+              log(`FALLBACK: Using tomorrow at same time for schedule ${schedule.id}: ${tomorrow.toISOString()}`);
+            }
+          } catch (calcError) {
+            log(`ERROR calculating next execution time for schedule ${schedule.id}: ${calcError.message}`);
+            log(`Schedule details: ${JSON.stringify(schedule)}`);
+            
+            // Fallback to ensure schedule runs tomorrow
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            // Keep the same time of day
+            const originalTime = new Date(schedule.start_time);
+            tomorrow.setHours(originalTime.getHours());
+            tomorrow.setMinutes(originalTime.getMinutes());
+            tomorrow.setSeconds(originalTime.getSeconds());
+            
+            updateData.start_time = tomorrow.toISOString();
+            updateData.last_executed_at = null;
+            log(`FALLBACK: Using tomorrow at same time for schedule ${schedule.id} after error: ${tomorrow.toISOString()}`);
           }
+        } else {
+          log(`WARNING: Schedule ${schedule.id} is not properly configured for recurring execution`);
+          log(`schedule_type: ${schedule.schedule_type}, recurrence_pattern: ${schedule.recurrence_pattern}`);
         }
         
+        // Log what we're updating for debugging
+        log(`Updating schedule ${schedule.id} with data: ${JSON.stringify(updateData)}`);
+        
         // Update execution info in the database
-        const { error: updateError } = await supabase
+        const { data: updateData_result, error: updateError } = await supabase
           .from('schedules')
           .update(updateData)
-          .eq('id', schedule.id);
+          .eq('id', schedule.id)
+          .select();
         
         if (updateError) {
+          log(`ERROR: Failed to update schedule ${schedule.id}: ${updateError.message}`);
+          log(`Update data was: ${JSON.stringify(updateData)}`);
           throw new Error(`Failed to update schedule: ${updateError.message}`);
+        } else {
+          log(`Successfully updated schedule ${schedule.id} in database`);
         }
         
         log(`Successfully executed schedule ${schedule.id}: ${actionResult.message}`);

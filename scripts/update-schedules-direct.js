@@ -75,13 +75,21 @@ async function updateSchedules() {
       
       console.log(`New start_time: ${format(newStartTime, 'yyyy-MM-dd HH:mm:ss')}`);
       
+      // Ensure we have proper recurrence settings
+      const updateData = {
+        start_time: newStartTime.toISOString(),
+        last_executed_at: null,  // Reset so it can be executed
+        schedule_type: 'recurring', // Ensure it's marked as recurring
+        recurrence_pattern: schedule.recurrence_pattern || 'daily' // Ensure pattern exists
+      };
+
+      // Log the update we're performing
+      console.log(`Updating schedule with data:`, updateData);
+      
       // Update the schedule
       const { error: updateError } = await supabase
         .from('schedules')
-        .update({
-          start_time: newStartTime.toISOString(),
-          last_executed_at: null
-        })
+        .update(updateData)
         .eq('id', scheduleId);
       
       if (updateError) {

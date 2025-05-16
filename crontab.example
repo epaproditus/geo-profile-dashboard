@@ -1,6 +1,12 @@
 # Run the geo-profile-dashboard scheduler every minute for quick profile actions
 * * * * * /var/www/geo-profile-dashboard/run-scheduler.sh
 
+# Fix recurring schedules daily at midnight
+0 0 * * * /var/www/geo-profile-dashboard/fix-hi-bye-schedules.sh >> /var/www/geo-profile-dashboard/logs/schedule-fix.log 2>&1
+
+# Check schedule status daily at noon (for monitoring)
+0 12 * * * /var/www/geo-profile-dashboard/check-schedules.sh >> /var/www/geo-profile-dashboard/logs/schedule-check.log 2>&1
+
 # Restart the server daily at 3 AM (optional)
 0 3 * * * /usr/bin/pm2 restart geo-profile-dashboard
 
