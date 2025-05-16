@@ -32,13 +32,17 @@ async function sendNtfyNotification({
   console.log(`Tags: ${tags.join(',')}`);
   
   try {
+    // Clean up inputs to avoid JSON formatting issues
+    const cleanTitle = title ? String(title).replace(/"/g, "'") : '';
+    const cleanMessage = message ? String(message).replace(/"/g, "'") : '';
+    
     // Create a properly formatted payload for ntfy
     const payload = {
       topic: ntfyTopic,
-      title: title,
-      message: message,
+      title: cleanTitle,
+      message: cleanMessage,
       priority: priority,
-      tags: tags || []
+      tags: tags && Array.isArray(tags) ? tags : []
     };
     
     if (click) {
@@ -51,7 +55,7 @@ async function sendNtfyNotification({
     
     console.log(`Request payload: ${JSON.stringify(payload, null, 2)}`);
     
-    // Make sure we have the correct URL format - include the topic in the URL
+    // Make sure we have the correct URL format
     const url = `${ntfyServer}/${ntfyTopic}`;
     console.log(`Full notification URL: ${url}`);
     
@@ -70,17 +74,17 @@ async function sendNtfyNotification({
       console.error(`Request body: ${JSON.stringify(payload, null, 2)}`);
       const responseText = await response.text();
       console.error(`Response body: ${responseText}`);
-      return null;
+      return false;
     }
     
     const responseData = await response.text();
     console.log(`Notification sent successfully. Response: ${responseData}`);
-    return true; // Return true on success instead of response object for easier checking
+    return true; // Return true on success
   } catch (error) {
     console.error('Error sending ntfy notification:', error);
     console.error('Error details:', error.message);
     console.error('Error stack:', error.stack);
-    return false; // Return false on error for easier checking
+    return false; // Return false on error
   }
 }
 
@@ -98,7 +102,8 @@ async function notifyProfileInstallation({
   console.log(`DEBUG: notifyProfileInstallation called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Installed: ${profileName}`;
-    let message = `The profile "${profileName}" has been installed on device "${deviceName}".`;
+    // Fix message to ensure consistent quote format in the JSON
+    let message = `The profile '${profileName}' has been installed on device '${deviceName}'.`;
     
     if (isTemporary) {
       message += ` It will be removed in ${temporaryDuration} minute${temporaryDuration !== 1 ? 's' : ''}.`;
@@ -136,7 +141,8 @@ async function notifyProfileRemoval({
   console.log(`DEBUG: notifyProfileRemoval called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Removed: ${profileName}`;
-    let message = `The profile "${profileName}" has been removed from device "${deviceName}".`;
+    // Fix message to ensure consistent quote format in the JSON
+    let message = `The profile '${profileName}' has been removed from device '${deviceName}'.`;
     
     if (wasTemporary) {
       message += ` This was a scheduled removal of a temporary profile.`;
