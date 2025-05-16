@@ -33,8 +33,8 @@ async function sendNtfyNotification({
   
   try {
     // Clean up inputs to avoid JSON formatting issues
-    const cleanTitle = title ? String(title).replace(/"/g, "'") : '';
-    const cleanMessage = message ? String(message).replace(/"/g, "'") : '';
+    const cleanTitle = title ? String(title).replace(/"/g, "'").replace(/\\/g, "") : '';
+    const cleanMessage = message ? String(message).replace(/"/g, "'").replace(/\\/g, "") : '';
     
     // Create a properly formatted payload for ntfy
     const payload = {
@@ -53,19 +53,21 @@ async function sendNtfyNotification({
       payload.actions = actions;
     }
     
-    console.log(`Request payload: ${JSON.stringify(payload, null, 2)}`);
+    // Verify the payload is valid JSON by parsing and stringifying it again
+    const validatedPayload = JSON.parse(JSON.stringify(payload));
+    console.log(`Validated payload: ${JSON.stringify(validatedPayload, null, 2)}`);
     
     // Make sure we have the correct URL format
     const url = `${ntfyServer}/${ntfyTopic}`;
     console.log(`Full notification URL: ${url}`);
     
-    // Send the notification with proper JSON content-type
+    // Send the notification directly to the topic endpoint
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload) // Send as JSON
+      body: JSON.stringify(validatedPayload) // Send validated JSON
     });
 
     if (!response.ok) {
@@ -102,8 +104,8 @@ async function notifyProfileInstallation({
   console.log(`DEBUG: notifyProfileInstallation called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Installed: ${profileName}`;
-    // Fix message to ensure consistent quote format in the JSON
-    let message = `The profile '${profileName}' has been installed on device '${deviceName}'.`;
+    // Use plain text without quotes for message
+    let message = `The profile ${profileName} has been installed on device ${deviceName}.`;
     
     if (isTemporary) {
       message += ` It will be removed in ${temporaryDuration} minute${temporaryDuration !== 1 ? 's' : ''}.`;
@@ -141,8 +143,8 @@ async function notifyProfileRemoval({
   console.log(`DEBUG: notifyProfileRemoval called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Removed: ${profileName}`;
-    // Fix message to ensure consistent quote format in the JSON
-    let message = `The profile '${profileName}' has been removed from device '${deviceName}'.`;
+    // Use plain text without quotes that could cause JSON formatting issues
+    let message = `The profile ${profileName} has been removed from device ${deviceName}.`;
     
     if (wasTemporary) {
       message += ` This was a scheduled removal of a temporary profile.`;
