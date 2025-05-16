@@ -32,18 +32,14 @@ async function sendNtfyNotification({
   console.log(`Tags: ${tags.join(',')}`);
   
   try {
-    // Use application/json content type and put everything in the body instead of headers
-    // This should fix the JSON formatting issues
+    // Create a properly formatted payload for ntfy
     const payload = {
       topic: ntfyTopic,
       title: title,
       message: message,
-      priority: priority
+      priority: priority,
+      tags: tags || []
     };
-    
-    if (tags && tags.length > 0) {
-      payload.tags = tags;
-    }
     
     if (click) {
       payload.click = click;
@@ -53,12 +49,13 @@ async function sendNtfyNotification({
       payload.actions = actions;
     }
     
-    console.log(`Request payload: ${JSON.stringify(payload)}`);
+    console.log(`Request payload: ${JSON.stringify(payload, null, 2)}`);
     
-    // Make sure we have the correct URL format
-    const url = `${ntfyServer}/`;
+    // Make sure we have the correct URL format - include the topic in the URL
+    const url = `${ntfyServer}/${ntfyTopic}`;
     console.log(`Full notification URL: ${url}`);
     
+    // Send the notification with proper JSON content-type
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -69,7 +66,8 @@ async function sendNtfyNotification({
 
     if (!response.ok) {
       console.error(`Error sending ntfy notification: ${response.status} ${response.statusText}`);
-      console.error(`Request body: ${JSON.stringify(payload)}`);
+      console.error(`Request URL: ${url}`);
+      console.error(`Request body: ${JSON.stringify(payload, null, 2)}`);
       const responseText = await response.text();
       console.error(`Response body: ${responseText}`);
       return null;
@@ -77,10 +75,12 @@ async function sendNtfyNotification({
     
     const responseData = await response.text();
     console.log(`Notification sent successfully. Response: ${responseData}`);
-    return response;
+    return true; // Return true on success instead of response object for easier checking
   } catch (error) {
     console.error('Error sending ntfy notification:', error);
-    return null; // Don't throw so it doesn't crash executor
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
+    return false; // Return false on error for easier checking
   }
 }
 
@@ -95,6 +95,7 @@ async function notifyProfileInstallation({
   isTemporary = false,
   temporaryDuration = 0
 }) {
+  console.log(`DEBUG: notifyProfileInstallation called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Installed: ${profileName}`;
     let message = `The profile "${profileName}" has been installed on device "${deviceName}".`;
@@ -103,16 +104,22 @@ async function notifyProfileInstallation({
       message += ` It will be removed in ${temporaryDuration} minute${temporaryDuration !== 1 ? 's' : ''}.`;
     }
     
-    return await sendNtfyNotification({
+    console.log(`Sending installation notification for profile ${profileName} on device ${deviceName}`);
+    const result = await sendNtfyNotification({
       title,
       message,
       tags: ['phone', 'check'],
       priority: 3,
       actions: [] // Empty array for no actions
     });
+    
+    console.log(`Installation notification sent: ${result ? 'Success' : 'Failed'}`);
+    return result;
   } catch (error) {
     console.error('Failed to send profile installation notification:', error);
-    return null;
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
+    return false;
   }
 }
 
@@ -135,18 +142,22 @@ async function notifyProfileRemoval({
       message += ` This was a scheduled removal of a temporary profile.`;
     }
     
-    return await sendNtfyNotification({
+    console.log(`Sending removal notification for profile ${profileName} on device ${deviceName}`);
+    const result = await sendNtfyNotification({
       title,
       message,
       tags: ['phone', 'x'],
       priority: 3,
       actions: [] // Empty array for no actions
     });
+    
+    console.log(`Removal notification sent: ${result ? 'Success' : 'Failed'}`);
+    return result;
   } catch (error) {
     console.error('Failed to send profile removal notification:', error);
     console.error('Error details:', error.message);
     console.error('Error stack:', error.stack);
-    return null;
+    return false;
   }
 }
 
