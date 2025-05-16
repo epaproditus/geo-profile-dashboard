@@ -32,48 +32,47 @@ async function sendNtfyNotification({
   console.log(`Tags: ${tags.join(',')}`);
   
   try {
-    // Clean up inputs to avoid JSON formatting issues
+    // Clean up inputs to avoid formatting issues
     const cleanTitle = title ? String(title).replace(/"/g, "'").replace(/\\/g, "") : '';
     const cleanMessage = message ? String(message).replace(/"/g, "'").replace(/\\/g, "") : '';
-    
-    // Create a properly formatted payload for ntfy
-    const payload = {
-      topic: ntfyTopic,
-      title: cleanTitle,
-      message: cleanMessage,
-      priority: priority,
-      tags: tags && Array.isArray(tags) ? tags : []
-    };
-    
-    if (click) {
-      payload.click = click;
-    }
-    
-    if (actions && actions.length > 0) {
-      payload.actions = actions;
-    }
-    
-    // Verify the payload is valid JSON by parsing and stringifying it again
-    const validatedPayload = JSON.parse(JSON.stringify(payload));
-    console.log(`Validated payload: ${JSON.stringify(validatedPayload, null, 2)}`);
     
     // Make sure we have the correct URL format
     const url = `${ntfyServer}/${ntfyTopic}`;
     console.log(`Full notification URL: ${url}`);
     
-    // Send the notification directly to the topic endpoint
+    // Prepare headers
+    const headers = {
+      'Content-Type': 'text/plain',
+      'Title': cleanTitle,
+      'Priority': priority.toString()
+    };
+    
+    // Add tags if present
+    if (tags && tags.length > 0) {
+      headers['Tags'] = tags.join(',');
+    }
+    
+    // Add click if present
+    if (click) {
+      headers['Click'] = click;
+    }
+    
+    // Log the request details
+    console.log(`Headers: ${JSON.stringify(headers, null, 2)}`);
+    console.log(`Body: ${cleanMessage}`);
+    
+    // Send the notification using HTTP headers approach instead of JSON
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(validatedPayload) // Send validated JSON
+      headers: headers,
+      body: cleanMessage // Send just the message as plain text
     });
 
     if (!response.ok) {
       console.error(`Error sending ntfy notification: ${response.status} ${response.statusText}`);
       console.error(`Request URL: ${url}`);
-      console.error(`Request body: ${JSON.stringify(payload, null, 2)}`);
+      console.error(`Request headers: ${JSON.stringify(headers, null, 2)}`);
+      console.error(`Request body: ${cleanMessage}`);
       const responseText = await response.text();
       console.error(`Response body: ${responseText}`);
       return false;
@@ -104,8 +103,8 @@ async function notifyProfileInstallation({
   console.log(`DEBUG: notifyProfileInstallation called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Installed: ${profileName}`;
-    // Use plain text without quotes for message
-    let message = `The profile ${profileName} has been installed on device ${deviceName}.`;
+    // Format with single quotes to avoid JSON issues
+    let message = `The profile '${profileName}' has been installed on device '${deviceName}'.`;
     
     if (isTemporary) {
       message += ` It will be removed in ${temporaryDuration} minute${temporaryDuration !== 1 ? 's' : ''}.`;
@@ -143,8 +142,8 @@ async function notifyProfileRemoval({
   console.log(`DEBUG: notifyProfileRemoval called for profile: ${profileName}, device: ${deviceName}`);
   try {
     const title = `Profile Removed: ${profileName}`;
-    // Use plain text without quotes that could cause JSON formatting issues
-    let message = `The profile ${profileName} has been removed from device ${deviceName}.`;
+    // Format with single quotes to avoid JSON issues
+    let message = `The profile '${profileName}' has been removed from device '${deviceName}'.`;
     
     if (wasTemporary) {
       message += ` This was a scheduled removal of a temporary profile.`;
