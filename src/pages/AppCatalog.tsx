@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useApps } from '../hooks/use-simplemdm';
+import { useApps, useAssignmentGroups } from '../hooks/use-simplemdm';
 import Navbar from '../components/Navbar';
+import { simplemdmApi } from "../lib/api/simplemdm";
 import { 
   Card, 
   CardContent, 
@@ -31,7 +32,9 @@ import {
   Package,
   AppWindow,
   Settings,
-  Puzzle
+  Puzzle,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -45,6 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
 
 // Generate a consistent color based on app name
 const getAppColor = (name: string): string => {
@@ -87,14 +91,51 @@ const AppCatalog: React.FC = () => {
   const [viewMode, setViewMode] = useState<'compact' | 'table'>('table');
   const [groupBy, setGroupBy] = useState<'none' | 'type' | 'status'>('none');
   const [activeTab, setActiveTab] = useState<string>("all");
+  const [loading, setLoading] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
+  const { toast } = useToast();
   
   const { data, isLoading, error } = useApps({ 
     limit, 
     starting_after: startingAfter 
   });
 
+  const { data: assignmentGroups, isLoading: isLoadingGroups } = useAssignmentGroups({ limit: 50 });
+
   const hasNextPage = data?.has_more || false;
   const hasPreviousPage = pageHistory.length > 0;
+
+  const handleUpdateApps = async () => {
+    // If no group is selected, show the dialog
+    if (!selectedGroupId) {
+      setIsGroupDialogOpen(true);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Use the selected assignment group ID
+      await simplemdmApi.updateAppsInGroup(selectedGroupId);
+
+      // Show a success toast
+      toast({
+        title: "Success!",
+        description: `Apps updated successfully for group ${selectedGroupId}.`,
+        variant: "default",
+      });
+    } catch (error) {
+      // Show an error toast
+      toast({
+        title: "Error",
+        description: "Failed to update apps. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleNextPage = () => {
     if (data?.data && data.data.length > 0) {
@@ -219,7 +260,31 @@ const AppCatalog: React.FC = () => {
     <>
       <Navbar />
       <div className="container mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">App Catalog</h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold">App Catalog</h1>
+          <div className="flex items-center gap-2">
+            {selectedGroupId && (
+              <div className="text-sm mr-2">
+                Selected Group: <span className="font-semibold">
+                  {assignmentGroups?.data?.find(g => g.id.toString() === selectedGroupId)?.attributes.name}
+                </span>
+              </div>
+            )}
+            <Button onClick={handleUpdateApps} disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating Apps...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Update Apps
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
         
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center space-x-2">
@@ -558,6 +623,18 @@ const AppCatalog: React.FC = () => {
           open={selectedAppId !== null}
           onClose={() => setSelectedAppId(null)}
         />
+        
+        {/* Dialog for selecting an assignment group */}
+        <UpdateAppsDialog
+          open={isGroupDialogOpen}
+          onOpenChange={setIsGroupDialogOpen}
+          assignmentGroups={assignmentGroups?.data || []}
+          isLoading={isLoadingGroups}
+          selectedGroupId={selectedGroupId}
+          setSelectedGroupId={setSelectedGroupId}
+          onUpdate={handleUpdateApps}
+          isUpdating={loading}
+        />
       </div>
     </>
   );
@@ -683,6 +760,136 @@ const AppDetailDialog: React.FC<AppDetailDialogProps> = ({ appId, open, onClose 
               </div>
             )}
           </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+type UpdateAppsDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  assignmentGroups: any[];
+  isLoading: boolean;
+  selectedGroupId: string;
+  setSelectedGroupId: (groupId: string) => void;
+  onUpdate: () => void;
+  isUpdating: boolean;
+};
+
+const UpdateAppsDialog: React.FC<UpdateAppsDialogProps> = ({
+  open,
+  onOpenChange,
+  assignmentGroups,
+  isLoading,
+  selectedGroupId,
+  setSelectedGroupId,
+  onUpdate,
+  isUpdating
+}) => {
+  const formatDate = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch (error) {
+      return 'Invalid date';
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Update Apps</DialogTitle>
+          <DialogDescription>
+            Select an assignment group to update all its apps
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-4">
+          {isLoading ? (
+            <div className="flex justify-center items-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : assignmentGroups && assignmentGroups.length > 0 ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="assignment-group" className="text-sm font-medium">
+                  Select an assignment group
+                </label>
+                <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
+                  <SelectTrigger id="assignment-group">
+                    <SelectValue placeholder="Select an assignment group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignmentGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.id.toString()}>
+                        {group.attributes.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedGroupId && (
+                <div className="border rounded-md p-3 bg-muted/30">
+                  <h4 className="font-medium mb-2">Assignment Group Details</h4>
+                  {assignmentGroups.map((group) => {
+                    if (group.id.toString() === selectedGroupId) {
+                      const appCount = group.relationships.apps.data.length;
+                      const deviceCount = group.relationships.devices.data.length;
+                      const deviceGroupCount = group.relationships.device_groups.data.length;
+                      
+                      return (
+                        <div key={group.id} className="text-sm grid grid-cols-2 gap-2">
+                          <span className="text-muted-foreground">Name:</span>
+                          <span>{group.attributes.name}</span>
+                          
+                          <span className="text-muted-foreground">Apps:</span>
+                          <span>{appCount} app{appCount !== 1 ? 's' : ''}</span>
+                          
+                          <span className="text-muted-foreground">Devices:</span>
+                          <span>{deviceCount} device{deviceCount !== 1 ? 's' : ''}</span>
+                          
+                          <span className="text-muted-foreground">Device Groups:</span>
+                          <span>{deviceGroupCount} group{deviceGroupCount !== 1 ? 's' : ''}</span>
+                          
+                          <span className="text-muted-foreground">Last Updated:</span>
+                          <span>{formatDate(group.attributes.updated_at)}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground">
+              No assignment groups found. Create assignment groups in SimpleMDM to update apps.
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={onUpdate} 
+            disabled={!selectedGroupId || isUpdating || isLoading}
+          >
+            {isUpdating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Updating Apps...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Update Apps
+              </>
+            )}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

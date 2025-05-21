@@ -584,6 +584,21 @@ export const simplemdmApi = {
     // Based on SimpleMDM API, custom configuration profiles have a specific type
     return profile.type === 'custom_configuration_profile';
   },
+
+  /**
+   * Update apps in a specific assignment group
+   */
+  async updateAppsInGroup(assignmentGroupId: number | string) {
+    try {
+      // Perform the API call to update apps
+      const response = await apiClient.post(`/assignment_groups/${assignmentGroupId}/update_apps`);
+      console.log('Apps updated successfully for group:', assignmentGroupId);
+      return response.data;
+    } catch (error) {
+      console.error(`Error updating apps for group ${assignmentGroupId}:`, error);
+      throw error;
+    }
+  },
 };
 
 export default simplemdmApi;
