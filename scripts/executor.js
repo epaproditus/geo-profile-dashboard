@@ -821,6 +821,11 @@ async function executeSchedules() {
     
     // Execute each schedule
     const results = await Promise.all(validSchedules.map(async (schedule) => {
+      const timeUntilExecution = new Date(schedule.start_time) - new Date(); // Calculate delay in milliseconds
+      if (timeUntilExecution > 0) {
+        log(`Delaying execution of schedule ${schedule.id} for ${Math.ceil(timeUntilExecution / 1000)} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, timeUntilExecution)); // Wait until start_time
+      }
       try {
         log(`Executing schedule ${schedule.id}`);
         
