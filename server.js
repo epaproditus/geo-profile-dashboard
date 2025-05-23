@@ -99,38 +99,10 @@ app.listen(PORT, () => {
   console.log(`- Admin API endpoint: http://localhost:${PORT}/api/auth/set-admin-status`);
   console.log(`- Schedules API endpoint: http://localhost:${PORT}/api/schedules/execute`);
   console.log(`- SimpleMDM API proxy: http://localhost:${PORT}/api/simplemdm/*`);
+  console.log(`- Quick Profiles API endpoint: http://localhost:${PORT}/api/quick-profiles`);
   
   console.log('\nFor troubleshooting information, see:');
   console.log('- ADMIN_API.md');
   console.log('- ADMIN_API_TROUBLESHOOTING.md');
-});
-
-// Import SimpleMDM proxy handler
-import simpleMdmProxyHandler from './api/simplemdm-proxy.js';
-
-// SimpleMDM API proxy route
-app.all('/api/simplemdm/*', async (req, res) => {
-  console.log(`SimpleMDM API proxy request: ${req.method} ${req.url}`);
-  try {
-    // Call the proxy handler
-    return await simpleMdmProxyHandler(req, res);
-  } catch (error) {
-    console.error('Error in SimpleMDM proxy endpoint:', error);
-    return res.status(500).json({ error: 'Internal Server Error', message: error.message });
-  }
-});
-
-// Import SimpleMDM proxy handler
-import simpleMdmProxyHandler from './api/simplemdm-proxy.js';
-
-// SimpleMDM API proxy route
-app.all('/api/simplemdm/*', async (req, res) => {
-  console.log(`SimpleMDM API proxy request: ${req.method} ${req.url}`);
-  try {
-    // Call the proxy handler
-    return await simpleMdmProxyHandler(req, res);
-  } catch (error) {
-    console.error('Error in SimpleMDM proxy endpoint:', error);
-    return res.status(500).json({ error: 'Internal Server Error', message: error.message });
-  }
+  console.log('- QUICK_PROFILES.md');
 });
