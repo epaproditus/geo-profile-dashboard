@@ -21,6 +21,7 @@ The geo-profile-dashboard now includes a complete deployment solution for VPS ho
 - [Cron Setup Guide](CRON_SETUP.md) - Details on setting up cron jobs
 - [Monitoring Guide](MONITORING.md) - Guidance on monitoring and maintenance
 - [Notifications Guide](NOTIFICATIONS.md) - Setting up push notifications for profile events
+- [Quick Profiles](QUICK_PROFILES.md) - Guide to using the Quick Profile Scheduler
 
 ### Quick Installation
 

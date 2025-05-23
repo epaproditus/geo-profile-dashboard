@@ -1,6 +1,9 @@
 # Run the geo-profile-dashboard scheduler every minute for quick profile actions
 * * * * * /var/www/geo-profile-dashboard/run-scheduler.sh
 
+# Process quick profile removals every 5 minutes
+*/5 * * * * /var/www/geo-profile-dashboard/run-quick-profile-removals.sh
+
 # Fix recurring schedules daily at midnight
 0 0 * * * /var/www/geo-profile-dashboard/fix-hi-bye-schedules.sh >> /var/www/geo-profile-dashboard/logs/schedule-fix.log 2>&1
 
