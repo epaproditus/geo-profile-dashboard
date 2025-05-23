@@ -7,8 +7,8 @@
 
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
-import { simplemdmApi } from '../api/simplemdm/api.js';
-import { notifyProfileRemoval } from '../lib/ntfy.js';
+import simplemdmApi from '../src/lib/api/simplemdm';
+import { notifyProfileRemoval } from '../src/lib/ntfy';
 
 // Load environment variables
 dotenv.config();
