@@ -36,6 +36,7 @@ app.all('/api/schedules/execute', async (req, res) => {
 
 // Import the admin status handler
 import setAdminStatusHandler from './api/auth/set-admin-status.js';
+import quickProfilesHandler from './api/quick-profiles.js';
 
 // API endpoint for setting admin status
 app.all('/api/auth/set-admin-status', async (req, res) => {
@@ -49,6 +50,22 @@ app.all('/api/auth/set-admin-status', async (req, res) => {
     return await setAdminStatusHandler(req, res);
   } catch (error) {
     console.error('Error in admin status endpoint:', error);
+    return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+  }
+});
+
+// API endpoint for quick profiles
+app.all('/api/quick-profiles', async (req, res) => {
+  console.log('Quick profiles API called with:', { 
+    method: req.method, 
+    body: req.body,
+    query: req.query
+  });
+  try {
+    // Wrap the serverless function for Express
+    return await quickProfilesHandler(req, res);
+  } catch (error) {
+    console.error('Error in quick profiles endpoint:', error);
     return res.status(500).json({ error: 'Internal Server Error', message: error.message });
   }
 });

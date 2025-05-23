@@ -2,7 +2,7 @@
 // This allows for temporary profile installations with automatic removal
 
 import { supabase } from '../src/lib/supabase';
-import simplemdmApi from '../src/lib/api/simplemdm';
+import simplemdmApi from '../src/lib/api/simplemdm.js';
 
 export default async function handler(req, res) {
   // Get the user from the auth token
