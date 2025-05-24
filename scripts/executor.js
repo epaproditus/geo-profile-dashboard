@@ -216,7 +216,10 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
                 };
                 log(`Installation notification params: ${JSON.stringify(notificationParams)}`);
                 
-                const result = await notifyProfileInstallation(notificationParams);
+                const result = if (!notificationSent) {
+    await notifyProfileInstallation(notificationParams);
+    notificationSent = true;
+}
                 log(`Installation notification result: ${result ? 'Success' : 'Failed or null'}`);
               }
               log(`Notification sent result: ${result ? 'Success' : 'Failed'}`);
