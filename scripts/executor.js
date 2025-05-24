@@ -681,20 +681,32 @@ async function executeDeviceAction(schedule, supabaseClient) {
           
           // Remove the profile from each device
           log(`Removing profile ${removeProfileId} from ${targetDevicesToRemove.length} devices`);
-          const removalResults = await Promise.all(
-            targetDevicesToRemove.map(device => 
-              removeProfileFromDevice(removeProfileId, device.id, schedule.id, supabaseClient)
-            )
-          );
-          
-          const removalSuccessCount = removalResults.filter(r => r.success).length;
-          const alreadyRemovedCount = removalResults.filter(r => r.alreadyRemoved).length;
-          
-          return { 
-            success: removalSuccessCount > 0, 
-            message: `Profile ${removeProfileId} removed from ${removalSuccessCount}/${targetDevicesToRemove.length} devices (${alreadyRemovedCount} already removed)`,
-            details: { deviceResults: removalResults }
-          };
+let notificationSent = false;
+
+const removalResults = await Promise.all(
+    targetDevicesToRemove.map(async device => {
+        const result = await removeProfileFromDevice(removeProfileId, device.id, schedule.id, supabaseClient);
+        
+        if (!notificationSent && result.success) {
+            try {
+                const notifyResult = await notifyProfileRemoval(notificationParams);
+                log(`Notification sent result: ${notifyResult ? 'Success' : 'Failed'}`);
+                notificationSent = true;
+            } catch (e) {
+                log(`Error in notification for removal: ${e.message}`);
+            }
+        }
+        return result;
+    })
+);
+
+const removalSuccessCount = removalResults.filter(r => r.success).length;
+const alreadyRemovedCount = removalResults.filter(r => r.alreadyRemoved).length;
+
+return {
+    success: removalSuccessCount > 0,
+    message: `Profile ${removeProfileId} removed from ${removalSuccessCount}/${targetDevicesToRemove.length} devices (${alreadyRemovedCount} already removed)`
+};
         } catch (error) {
           log(`Error removing profile: ${error.message}`);
           return { success: false, message: `Error removing profile: ${error.message}` };
