@@ -171,7 +171,7 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
             const metadata = schedule.metadata || {};
             
             // Always send notification for profile installation
-            log(`Sending notification for profile installation. Metadata: ${JSON.stringify(metadata)}`);
+            log(`Sending installation notifications for schedule=${scheduleId}, ProfileID=${profileId}`);
             
             // Get profile and device names from metadata or fetch them
             let profileName = metadata.profile_name;
@@ -201,7 +201,7 @@ async function pushProfileToDevice(profileId, deviceId, scheduleId, supabaseClie
             }
             
             // Send the notification
-            log(`Attempting to send notification for profile ${profileName} to ${deviceName}`);
+            log(`Matching device found: DeviceID=${deviceId}, DeviceName=${deviceName}`);
             try {
               if (typeof notifyProfileInstallation !== 'function') {
                 log(`ERROR: notifyProfileInstallation is not a function, type: ${typeof notifyProfileInstallation}`);
